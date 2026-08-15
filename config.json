@@ -1,6 +1,6 @@
 {
-  "destination": "",
-  "station": "",
+  "destination": "MYB",
+  "station": "SKM",
   "wifi": {
     "ssid": "",
     "password": ""

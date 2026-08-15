@@ -214,8 +214,14 @@ def run(config: config_module.Config):
       widget.render()
       screen.flush()
 
-    # Get first set of departures synchonously.
-    departure_updater.update()
+    # Get first set of departures synchonously. A failure here is not fatal:
+    # the display falls back to the departures baked into the firmware, and
+    # the update loop below keeps trying.
+    try:
+      departure_updater.update()
+    except Exception as e:
+      logging.log('Initial train update failed, using fallback departures.')
+      sys.print_exception(e)
     gc.collect()
 
     logging.log('Start render loop')
@@ -232,18 +238,20 @@ def run(config: config_module.Config):
           departure_updater.update()
           gc.collect()
           break
-        except (OSError, ValueError) as e:
-          # Catch transient network or HTTP issues and retry
+        except Exception as e:
+          # Anything at all: a dropped connection, a revoked token, an API
+          # that has been retired and now answers with something we can't
+          # parse. The board keeps showing what it has either way, so none of
+          # it is worth resetting the device over.
           if isinstance(e, OSError) and e.errno == errno.ECONNABORTED:
             logging.log('Received ECONNABORTED error, try reconnecting...')
             _reconnect(wlan, config.wifi.ssid, config.wifi.password)
           logging.log(
               'Train update attempt {}/{} failed!', attempt, _MAX_ATTEMPTS
           )
-          if attempt < _MAX_ATTEMPTS:
-            sys.print_exception(e)
-          else:
-            raise e
+          sys.print_exception(e)
+          # Never give up: the board keeps showing the last departures it has,
+          # with the stale dot in the corner, and we try again next interval.
 
       for _ in range(update_interval):
         time.sleep(1)

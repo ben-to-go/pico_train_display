@@ -33,10 +33,13 @@ import ssl
 import time
 import _thread
 
+import fallback
 import utils
 
 
-_REQUEST_TIMEOUT = 10
+# Short, because a slow API shouldn't leave the board frozen: give up and show
+# the last board we have instead.
+_REQUEST_TIMEOUT = 5
 _MAXRESPONSE_SIZE = 40 * 1024
 
 # How far ahead to ask for departures. The panel only has room for a handful,
@@ -269,6 +272,15 @@ class Departure:
 Station = collections.namedtuple('Station', ('name', 'departures'))
 
 
+def fallback_departures() -> Station:
+  """The board baked into the firmware, for when the API can't be reached.
+
+  Not filtered by min_departure_time: these departures are a fixed snapshot,
+  so "departing in the next few minutes" means nothing for them.
+  """
+  return parse_departures(json.loads(fallback.RESPONSE))
+
+
 def _lineup_url(endpoint: str, station: str, filter_to: str) -> str:
   return (
       endpoint
@@ -309,24 +321,12 @@ def get_access_token(
   )['token']
 
 
-def get_departures(
-    station: str,
-    destination: str,
-    access_token: str,
-    endpoint: str,
-    *,
-    min_departure_time: int = 0,
-    buffer: memoryview | None = None,
-    ssl_context: ssl.SSLContext | None = None,
-) -> Station:
-  """Requests set of departures from->to provided stations."""
-  response_json = _get_json(
-      _lineup_url(endpoint, station, destination),
-      access_token,
-      buffer,
-      ssl_context,
-  )
+def parse_departures(response_json, min_departure_time: int = 0) -> Station:
+  """Turns a location line-up response into the board to display.
 
+  Kept separate from fetching so that the departures baked into the firmware
+  go through exactly the same parsing as live ones.
+  """
   now = time.mktime(utils.get_uk_time())
   departures = []
   for service in response_json.get('services') or []:
@@ -363,6 +363,28 @@ def get_departures(
   return results
 
 
+def get_departures(
+    station: str,
+    destination: str,
+    access_token: str,
+    endpoint: str,
+    *,
+    min_departure_time: int = 0,
+    buffer: memoryview | None = None,
+    ssl_context: ssl.SSLContext | None = None,
+) -> Station:
+  """Requests set of departures from->to provided stations."""
+  return parse_departures(
+      _get_json(
+          _lineup_url(endpoint, station, destination),
+          access_token,
+          buffer,
+          ssl_context,
+      ),
+      min_departure_time,
+  )
+
+
 class DepartureUpdater:
   """Class that updates departures for a given station periodically."""
 
@@ -383,6 +405,8 @@ class DepartureUpdater:
 
     self._lock = _thread.allocate_lock()
     self._departures = Station(station, tuple())
+    self._stale = True
+    self._fetched = False
     self._buffer = bytearray(_MAXRESPONSE_SIZE)
     self._memoryview = memoryview(self._buffer)
     self._ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -406,16 +430,35 @@ class DepartureUpdater:
     )
 
   def update(self):
-    """Updates the set of departures for a given station."""
+    """Updates the set of departures for a given station.
+
+    Marks the board stale and re-raises if the fetch fails. Whatever was last
+    fetched stays on the display; if nothing ever has, the departures baked
+    into the firmware are shown instead.
+    """
     try:
-      departures = self._get_departures()
-    except AuthError:
-      # Access tokens are short lived, so get a new one and try once more.
-      self._access_token = None
-      departures = self._get_departures()
+      try:
+        departures = self._get_departures()
+      except AuthError:
+        # Access tokens are short lived, so get a new one and try once more.
+        self._access_token = None
+        departures = self._get_departures()
+    except Exception:
+      with self._lock:
+        self._stale = True
+        if not self._fetched:
+          self._departures = fallback_departures()
+      raise
 
     with self._lock:
       self._departures = departures
+      self._stale = False
+      self._fetched = True
+
+  def stale(self) -> bool:
+    """Whether the departures on show failed to refresh."""
+    with self._lock:
+      return self._stale
 
   def departures(self) -> tuple[Departure, ...]:
     """Returns tuple of departures."""

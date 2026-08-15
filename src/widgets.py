@@ -25,6 +25,9 @@ import trains
 
 _WELCOME_TO = 'Welcome to'
 
+# Pixels square, in the bottom right corner.
+_STALE_DOT_SIZE = 2
+
 
 def _time_to_str(hh_mm: int) -> str:
   """Helper to convert integer time [h]h[m]m to HH:mm string."""
@@ -234,6 +237,7 @@ class MainWidget(Widget):
     )
     self._departures_spacer = default_font.max_bounds()[1] + 2
     self._num_departures = -1
+    self._last_stale = None
 
     num_departures = (
         screen.height - self._clock_widget.bounds()[1]
@@ -271,4 +275,25 @@ class MainWidget(Widget):
     y = self._screen.height - clock_bounds[1]
 
     need_refresh |= self._clock_widget.render(now, x, y, *clock_bounds)
+    need_refresh |= self._render_stale_dot()
     return need_refresh
+
+  def _render_stale_dot(self) -> bool:
+    """A dot in the corner while the departures on show failed to refresh.
+
+    Small enough to be invisible across a room, obvious if you know to look.
+    Nothing at all is drawn while the data is current.
+    """
+    stale = self._departure_updater.stale()
+    # Drawn every time rather than only on change, so that it comes back after
+    # anything else clears the screen, such as waking from out of hours.
+    self._screen.fill_rect(
+        self._screen.width - _STALE_DOT_SIZE,
+        self._screen.height - _STALE_DOT_SIZE,
+        _STALE_DOT_SIZE,
+        _STALE_DOT_SIZE,
+        15 if stale else 0,
+    )
+    changed = stale != self._last_stale
+    self._last_stale = stale
+    return changed
