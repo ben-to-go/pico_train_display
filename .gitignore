@@ -3,3 +3,4 @@
 .venv/
 .micropico
 __pycache__/
+.env
