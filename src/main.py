@@ -193,16 +193,12 @@ def run(config: config_module.Config):
   thread_running = _thread.allocate_lock()
   try:
     main_running.acquire()
-    slow_stations = set([config.slow_station]) if config.slow_station else None
     departure_updater = trains.DepartureUpdater(
         config.station,
         config.destination,
         config.rtt.endpoint,
-        trains.make_basic_auth(
-            username=config.rtt.username,
-            password=config.rtt.password,
-        ),
-        slow_stations=slow_stations,
+        config.rtt.token,
+        slow_station=config.slow_station,
         min_departure_time=config.min_departure_time,
     )
     gc.collect()

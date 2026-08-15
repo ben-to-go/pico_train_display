@@ -1,5 +1,19 @@
 # Release Notes
 
+## Unreleased
+
+- Moved to the next generation Realtime Trains API at `https://data.rtt.io`.
+
+  Sign up at [api-portal.rtt.io](https://api-portal.rtt.io/) and put the token
+  in `rtt.token`; `rtt.username` and `rtt.password` are gone. The endpoint
+  default has changed, so existing `config.json` files need updating.
+
+- "Slow stations" no longer need the custom web server.
+
+  Calling points are found by asking the API for a second departure board
+  filtered to the slow station, which is one extra request for the whole board
+  instead of one per service.
+
 ## v1.1.0
 
 - Added optional supoprt for "slow stations".
