@@ -20,7 +20,6 @@
 
 import display
 import fonts
-import glyphs
 import trains
 
 
@@ -164,20 +163,12 @@ class DepartureWidget(Widget):
       font: fonts.Font,
       width: int,
       status_font: fonts.Font | None = None,
-      fast_train_icon: glyphs.Glyph | None = None,
   ):
     super().__init__(screen)
     self._font = font
     self._width = width
     self._status_font = status_font if status_font else font
-    self._fast_train_icon = fast_train_icon
     self._max_clock_width = self._font.calculate_bounds('00:00')[0]
-    if self._fast_train_icon:
-      # How far to offset fast train icon from right-hand side.
-      self._fast_train_offset = self._fast_train_icon.max_bounds()[0] + max(
-          self._status_font.calculate_bounds('Exp 00:00')[0],
-          self._status_font.calculate_bounds('Cancelled')[0],
-      )
 
     self._last_departure = None
 
@@ -185,8 +176,6 @@ class DepartureWidget(Widget):
     max_height = max(
         self._font.max_bounds()[1], self._status_font.max_bounds()[1]
     )
-    if self._fast_train_icon:
-      max_height = max(max_height, self._fast_train_icon.max_bounds()[1])
     return self._width, max_height
 
   def render(
@@ -218,11 +207,6 @@ class DepartureWidget(Widget):
       status_w, _ = self._status_font.calculate_bounds(status)
 
     self._status_font.render_text(status, self._screen, w - status_w, y)
-
-    if departure.fast_train and self._fast_train_icon:
-      self._fast_train_icon.render_glyph(
-          self._screen, w - self._fast_train_offset - 2, y
-      )
     return True
 
 
@@ -237,7 +221,6 @@ class MainWidget(Widget):
       tall_font: fonts.Font,
       default_font: fonts.Font,
       render_seconds: bool = True,
-      fast_train_icon: glyphs.Glyph | None = None,
   ):
     super().__init__(screen)
     self._departure_updater = departure_updater
@@ -262,7 +245,6 @@ class MainWidget(Widget):
               bold_font if i == 0 else default_font,
               screen.width,
               default_font,
-              fast_train_icon,
           )
       )
 

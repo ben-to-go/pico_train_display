@@ -34,7 +34,6 @@ import ntptime
 import config as config_module
 import display
 import fonts
-import glyphs
 import logging
 from setup import server
 import trains
@@ -132,7 +131,6 @@ def _render_thread(
         fonts.DEFAULT_FONT,
         # Don't render seconds on e-paper displays.
         render_seconds=(config.display.type != 'epd29b'),
-        fast_train_icon=glyphs.FAST_TRAIN_ICON,
     )
     non_active = widgets.MessageWidget(
         screen, _DISPLAY_NOT_ACTIVE, fonts.DEFAULT_FONT
@@ -198,7 +196,6 @@ def run(config: config_module.Config):
         config.destination,
         config.rtt.endpoint,
         config.rtt.token,
-        slow_station=config.slow_station,
         min_departure_time=config.min_departure_time,
     )
     gc.collect()

@@ -24,5 +24,3 @@ RAM consumption."""
 from . import dot_matrix_regular
 from . import dot_matrix_bold
 from . import dot_matrix_bold_tall
-
-from . import fast_train_icon

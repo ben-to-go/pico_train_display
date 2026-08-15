@@ -223,13 +223,11 @@ class Departure:
       departure_time: int,
       actual_departure_time: int,
       cancelled: bool,
-      fast_train: bool,
   ):
     self._destination = destination
     self._departure_time = departure_time
     self._actual_departure_time = actual_departure_time
     self._cancelled = cancelled
-    self._fast_train = fast_train
 
   @property
   def destination(self) -> str:
@@ -247,20 +245,15 @@ class Departure:
   def cancelled(self) -> bool:
     return self._cancelled
 
-  @property
-  def fast_train(self) -> bool:
-    return self._fast_train
-
   def __repr__(self) -> str:
     return (
         'Departure(destination="{}", departure_time={},'
-        'actual_departure_tume={}, cancelled={}, fast={})'
+        'actual_departure_time={}, cancelled={})'
     ).format(
         self.destination,
         self.departure_time,
         self.actual_departure_time,
         self.cancelled,
-        self.fast_train,
     )
 
   def __eq__(self, other: object) -> bool:
@@ -270,7 +263,6 @@ class Departure:
         and self.actual_departure_time == other.actual_departure_time
         and self.cancelled == other.cancelled
         and self.destination == other.destination
-        and self.fast_train == other.fast_train
     )
 
 
@@ -317,31 +309,6 @@ def get_access_token(
   )['token']
 
 
-def _slow_service_ids(
-    station: str, slow_station: str, access_token: str, endpoint: str,
-    buffer, ssl_context
-) -> set:
-  """Identities of services that call at the slow station.
-
-  Asking for the line-up filtered to the slow station is one extra request for
-  the whole board, rather than fetching every service's calling points.
-  """
-  response_json = _get_json(
-      _lineup_url(endpoint, station, slow_station),
-      access_token,
-      buffer,
-      ssl_context,
-  )
-  ids = set()
-  for service in response_json.get('services') or []:
-    identity = service['scheduleMetadata'].get('uniqueIdentity')
-    if identity:
-      ids.add(identity)
-  del response_json
-  gc.collect()
-  return ids
-
-
 def get_departures(
     station: str,
     destination: str,
@@ -351,18 +318,8 @@ def get_departures(
     min_departure_time: int = 0,
     buffer: memoryview | None = None,
     ssl_context: ssl.SSLContext | None = None,
-    slow_station: str | None = None,
 ) -> Station:
   """Requests set of departures from->to provided stations."""
-  # Done first because it shares the response buffer with the departures below.
-  slow_ids = (
-      _slow_service_ids(
-          station, slow_station, access_token, endpoint, buffer, ssl_context
-      )
-      if slow_station
-      else None
-  )
-
   response_json = _get_json(
       _lineup_url(endpoint, station, destination),
       access_token,
@@ -391,17 +348,12 @@ def get_departures(
         d['location']['description'] for d in service['destination']
     )
 
-    fast_train = False
-    if slow_ids is not None:
-      fast_train = service['scheduleMetadata']['uniqueIdentity'] not in slow_ids
-
     departures.append(
         Departure(
             destinations,
             _to_hhmm(booked),
             _to_hhmm(departure.get('realtimeForecast') or booked),
             departure.get('isCancelled', False),
-            fast_train,
         )
     )
 
@@ -421,8 +373,6 @@ class DepartureUpdater:
       endpoint: str,
       token: str,
       min_departure_time: int,
-      *,
-      slow_station: str | None = None,
   ):
     self._station = station
     self._destination = destination
@@ -430,7 +380,6 @@ class DepartureUpdater:
     self._token = token
     self._access_token = None
     self._min_departure_time = min_departure_time
-    self._slow_station = slow_station
 
     self._lock = _thread.allocate_lock()
     self._departures = Station(station, tuple())
@@ -451,7 +400,6 @@ class DepartureUpdater:
         self._destination,
         self._access_token,
         self._endpoint,
-        slow_station=self._slow_station,
         min_departure_time=self._min_departure_time,
         buffer=self._memoryview,
         ssl_context=self._ssl_context,
