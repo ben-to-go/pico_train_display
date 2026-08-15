@@ -8,10 +8,13 @@
   middle, the train after it, and the clock alone on the bottom row. The
   rotating third row is numbered 2nd or 3rd; the next train needs no telling.
 
-  One size of text for the trains, with nothing in bold, as on the real
-  thing. The clock is the exception, in a taller font that fills the row
-  which descenders need elsewhere. The bold font is gone entirely and the
-  tall one is now digits and a colon only.
+  Every row is the same nine pixels, as on the real thing. Text uses seven
+  of them and leaves two for descenders; the clock, which has none, fills all
+  nine. That is the only reason it reads as larger. The bold font is gone and
+  the tall one is now nine pixels of digits and a colon.
+
+  The rows are spread down the screen with the gap above the first matching
+  the gap below the clock. See `docs/display-format.md`.
 
   Once the last train has gone the board says "No more departures today"
   rather than welcoming you to the station.

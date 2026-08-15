@@ -47,6 +47,23 @@ _MAX_DEPARTURES = 3
 _STALE_DOT_SIZE = 2
 
 
+def _distribute(height: int, row_heights) -> tuple[int, ...]:
+  """Spreads rows down the screen with the space shared out evenly.
+
+  The gap above the first row matches the one below the last, so the board
+  doesn't look bunched against the top.
+  """
+  free = height - sum(row_heights)
+  slots = len(row_heights) + 1  # above each row, and below the last one
+  tops = []
+  y = 0
+  for i, row_height in enumerate(row_heights):
+    y += free * (i + 1) // slots - free * i // slots
+    tops.append(y)
+    y += row_height
+  return tuple(tops)
+
+
 def _truncate(font: fonts.Font, text: str, max_width: int) -> str:
   """Shortens text with a trailing '..' until it fits."""
   width = font.calculate_bounds(text)[0]
@@ -142,15 +159,20 @@ class NoDeparturesWidget(Widget):
 
 
 class ScrollingTextWidget(Widget):
-  """A line of text that scrolls right to left, as calling points do.
+  """A fixed label with a line of text scrolling right to left beside it.
 
-  Only the characters actually on screen are drawn: the string can be a
+  As on a real indicator, "Calling at:" stays put and the stations run past
+  it. Only the characters actually on screen are drawn: the list can be a
   couple of hundred characters long and this runs on every frame.
   """
 
-  def __init__(self, screen: display.Display, font: fonts.Font):
+  def __init__(
+      self, screen: display.Display, font: fonts.Font, label: str = ''
+  ):
     super().__init__(screen)
     self._font = font
+    self._label = label
+    self._label_width = font.calculate_bounds(label)[0] if label else 0
     self._text = ''
     self._offsets = [0]  # cumulative pixel width before each character
     self._scroll = 0
@@ -178,31 +200,49 @@ class ScrollingTextWidget(Widget):
 
     self._needs_clear = False
     self._screen.fill_rect(x, y, w, h, 0)
+
+    window_x = x + self._label_width
+    window_w = w - self._label_width
     width = self._offsets[-1]
 
-    if width <= w:
-      self._font.render_text(self._text, self._screen, x, y)
+    if width <= window_w:
+      self._font.render_text(self._text, self._screen, window_x, y)
+      self._render_label(x, y, h)
       return True
 
-    # Find the run of characters visible in this window.
+    # Find the run of characters visible in the window beside the label.
     start = 0
     while start < len(self._text) and self._offsets[start + 1] <= self._scroll:
       start += 1
     end = start
-    while end < len(self._text) and self._offsets[end] < self._scroll + w:
+    while end < len(self._text) and self._offsets[end] < self._scroll + window_w:
       end += 1
 
     self._font.render_text(
         self._text[start:end],
         self._screen,
-        x + self._offsets[start] - self._scroll,
+        window_x + self._offsets[start] - self._scroll,
         y,
     )
 
+    self._render_label(x, y, h)
+
     self._scroll += _SCROLL_STEP
     if self._scroll > width + _SCROLL_GAP:
-      self._scroll = -w  # Off the right hand edge, ready to come round again.
+      # Off the right hand edge of the window, ready to come round again.
+      self._scroll = -window_w
     return True
+
+  def _render_label(self, x: int, y: int, h: int) -> None:
+    """Draws the label over the scroll, so it never moves.
+
+    A part-scrolled character starts left of the window, which would otherwise
+    creep under the label: blitting clips to the screen, not to the window.
+    """
+    if not self._label:
+      return
+    self._screen.fill_rect(x, y, self._label_width, h, 0)
+    self._font.render_text(self._label, self._screen, x, y)
 
 
 class MessageWidget(Widget):
@@ -329,14 +369,20 @@ class MainWidget(Widget):
     # bottom row is taller, filling the row that descenders need elsewhere.
     self._clock_widget = ClockWidget(screen, clock_font, render_seconds)
     self._no_departures_widget = NoDeparturesWidget(screen, font)
-    self._calling_at_widget = ScrollingTextWidget(screen, font)
+    self._calling_at_widget = ScrollingTextWidget(screen, font, _CALLING_AT)
     self._first_widget = DepartureWidget(screen, font, screen.width)
     self._later_widget = DepartureWidget(screen, font, screen.width)
 
     self._text_height = font.max_bounds()[1]
-    self._row_height = (
-        screen.height - self._clock_widget.bounds()[1]
-    ) // 3
+    self._rows = _distribute(
+        screen.height,
+        (
+            self._text_height,
+            self._text_height,
+            self._text_height,
+            self._clock_widget.bounds()[1],
+        ),
+    )
     self._num_departures = -1
     self._last_stale = None
 
@@ -348,15 +394,14 @@ class MainWidget(Widget):
     if departures:
       self._no_departures_widget.clear()
       need_refresh |= self._first_widget.render(
-          departures[0], '', 0, 0, *self._first_widget.bounds()
+          departures[0], '', 0, self._rows[0], *self._first_widget.bounds()
       )
 
       points = self._departure_updater.calling_points()
-      self._calling_at_widget.set_text(
-          _CALLING_AT + ', '.join(points) if points else ''
-      )
+      # The label belongs to the widget; only the stations scroll.
+      self._calling_at_widget.set_text(', '.join(points) if points else '')
       need_refresh |= self._calling_at_widget.render(
-          0, self._row_height, self._screen.width, self._text_height
+          0, self._rows[1], self._screen.width, self._text_height
       )
 
       # The third line works through the rest of the departures in turn.
@@ -367,21 +412,18 @@ class MainWidget(Widget):
         index = 1 + (seconds // _ALTERNATE_SECONDS) % later_count
         later, ordinal = departures[index], _ORDINALS[index]
       need_refresh |= self._later_widget.render(
-          later, ordinal, 0, self._row_height * 2,
-          *self._later_widget.bounds()
+          later, ordinal, 0, self._rows[2], *self._later_widget.bounds()
       )
     else:
       if self._num_departures != 0:
-        self._screen.fill_rect(
-            0, 0, self._screen.width, self._row_height * 3, 0
-        )
+        self._screen.fill_rect(0, 0, self._screen.width, self._rows[3], 0)
         self._calling_at_widget.set_text('')
-        self._first_widget.render(None, '', 0, 0,
+        self._first_widget.render(None, '', 0, self._rows[0],
                                   *self._first_widget.bounds())
-        self._later_widget.render(None, '', 0, self._row_height * 2,
+        self._later_widget.render(None, '', 0, self._rows[2],
                                   *self._later_widget.bounds())
       need_refresh |= self._no_departures_widget.render(
-          0, self._row_height, self._screen.width,
+          0, self._rows[1], self._screen.width,
           self._no_departures_widget.bounds()[1]
       )
 
@@ -390,7 +432,7 @@ class MainWidget(Widget):
 
     clock_bounds = self._clock_widget.bounds()
     x = (self._screen.width - clock_bounds[0]) // 2
-    y = self._screen.height - clock_bounds[1]
+    y = self._rows[3]
 
     need_refresh |= self._clock_widget.render(now, x, y, *clock_bounds)
     need_refresh |= self._render_stale_dot()
