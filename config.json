@@ -5,11 +5,10 @@
   "wifi": {
     "ssid": "",
     "password": ""
-  }, 
+  },
   "rtt": {
-    "endpoint": "https://api.rtt.io/api/v1/json",
-    "username": "",
-    "password": "", 
+    "endpoint": "https://data.rtt.io",
+    "token": "",
     "update_interval": 20
   },
   "display": {
@@ -18,5 +17,7 @@
     "flip": false,
     "active_time": ""
   },
-  "debug_log": false
+  "debug": {
+    "log": false
+  }
 }
