@@ -8,11 +8,15 @@
   in `rtt.token`; `rtt.username` and `rtt.password` are gone. The endpoint
   default has changed, so existing `config.json` files need updating.
 
-- "Slow stations" no longer need the custom web server.
+- Removed "slow stations" and the fast train icon.
 
-  Calling points are found by asking the API for a second departure board
-  filtered to the slow station, which is one extra request for the whole board
-  instead of one per service.
+  The board now shows time, destination and status, and nothing else. The
+  `slow_station` setting is gone and must be removed from `config.json`.
+
+- Removed the optional web server in `server/`.
+
+  It existed to add calling-at stations for the fast train icon and to trim
+  the old API's responses, and neither is needed now.
 
 ## v1.1.0
 
