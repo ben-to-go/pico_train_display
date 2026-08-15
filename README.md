@@ -9,7 +9,19 @@ This project uses the
 [Realtime Trains API](https://api-portal.rtt.io/) as its data source,
 and is heavily inspired by [several other projects](#credits).
 
-![completed display](docs/images/completed.png)
+The layout copies a real National Rail platform indicator, down to the row
+geometry: four rows of nine pixels, text using seven of them with two for
+descenders, and the clock, which has none, filling all nine.
+
+| A real platform indicator | This display |
+|---|---|
+| <img src="https://blog.balena.io/wp-content/uploads/2019/07/hu788k5bih421.jpg" width="380"> | <img src="docs/images/platform_indicator.png" width="380"> |
+
+Both are real: the right-hand board is a genuine Chiltern Railways morning
+from Stoke Mandeville, calling points and all, exactly as the API returned it.
+
+How that was measured, and what it means for the fonts, is in
+[docs/display-format.md](docs/display-format.md).
 
 ## Introduction
 
@@ -61,8 +73,6 @@ Along with the SSD1322-based displays, there's also experimental support for
 [2.9" e-Paper display](https://www.waveshare.com/wiki/Pico-ePaper-2.9-B). It's
 doesn't look as authentic, but is also super simple to setup!
 
-![ePaper display](docs/images/epaper_display.png)
-
 ## Credits
 
 Firstly, a massive thank you to [Dave Ingram](https://github.com/dingram) for
@@ -77,6 +87,9 @@ and of course [Dave](https://github.com/dingram/uk-train-display).
 Also a big thank you to the wonderful folk at
 [Realtime Trains](https://www.realtimetrains.co.uk/) for providing a brilliant
 API for train departures.
+
+The photograph of a real indicator above is from
+[balena's write-up](https://blog.balena.io/) of Chris Crocker-White's build.
 
 Finally thank you to Daniel Hart who created the wonderful
 [Dot Matrix](https://github.com/DanielHartUK/Dot-Matrix-Typeface) type face, and

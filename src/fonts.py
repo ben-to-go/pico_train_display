@@ -80,5 +80,6 @@ class Font:
 _PALETTE = framebuf.FrameBuffer(bytearray([0, 255]), 2, 1, framebuf.GS8)
 
 DEFAULT_FONT = Font(assets.dot_matrix_regular, _PALETTE)
-BOLD_FONT = Font(assets.dot_matrix_bold, _PALETTE)
-TALL_FONT = Font(assets.dot_matrix_bold_tall, _PALETTE)
+# Digits have no descenders, so the clock can be taller than the rows of
+# text while still sitting inside the same bottom row.
+CLOCK_FONT = Font(assets.dot_matrix_clock, _PALETTE)

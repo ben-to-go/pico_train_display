@@ -54,6 +54,25 @@ class FallbackDeparturesTest(unittest.TestCase):
       self.assertEqual('London Marylebone', departure.destination)
       self.assertFalse(departure.cancelled)
 
+  def test_comes_with_calling_points_for_the_first_train(self):
+    # The calling points are a second request the device cannot make when the
+    # API is down, so they are baked in beside the board.
+    self.assertEqual(
+        (
+            'Wendover',
+            'Great Missenden',
+            'Amersham',
+            'Chalfont and Latimer',
+            'Chorleywood',
+            'Harrow-on-the-Hill',
+            'London Marylebone',
+        ),
+        trains.fallback_calling_points('SKM'),
+    )
+
+  def test_calling_points_are_empty_for_another_station(self):
+    self.assertEqual((), trains.fallback_calling_points('KGX'))
+
   def test_is_not_filtered_by_departure_time(self):
     # The snapshot is fixed, so "departing in the next N minutes" is
     # meaningless for it and must not empty the board.
@@ -117,6 +136,8 @@ class StaleBoardTest(unittest.TestCase):
     self.assertTrue(updater.stale())
     self.assertEqual('Stoke Mandeville', updater.station())
     self.assertTrue(updater.departures())
+    # Including the line that scrolls.
+    self.assertIn('Wendover', updater.calling_points())
 
   def test_fallback_is_used_whatever_station_is_configured(self):
     updater = _updater('KGX', 'YRK')
