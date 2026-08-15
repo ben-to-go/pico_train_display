@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- The board is laid out like a real platform indicator.
+
+  Four rows: the next train, the stations it calls at scrolling along the
+  middle, the train after it, and the clock alone on the bottom row. The
+  rotating third row is numbered 2nd or 3rd; the next train needs no telling.
+
+  One size of text for the trains, with nothing in bold, as on the real
+  thing. The clock is the exception, in a taller font that fills the row
+  which descenders need elsewhere. The bold font is gone entirely and the
+  tall one is now digits and a colon only.
+
+  Once the last train has gone the board says "No more departures today"
+  rather than welcoming you to the station.
+
 - The board survives the API being down.
 
   Real Stoke Mandeville departures are baked into the firmware and shown if

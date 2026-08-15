@@ -22,5 +22,4 @@ These can be optionally added as frozen modules to the Pico firmware, reducing
 RAM consumption."""
 
 from . import dot_matrix_regular
-from . import dot_matrix_bold
-from . import dot_matrix_bold_tall
+from . import dot_matrix_clock

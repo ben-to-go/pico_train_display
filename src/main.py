@@ -126,9 +126,8 @@ def _render_thread(
     main_display = widgets.MainWidget(
         screen,
         departure_updater,
-        fonts.BOLD_FONT,
-        fonts.TALL_FONT,
         fonts.DEFAULT_FONT,
+        fonts.CLOCK_FONT,
         # Don't render seconds on e-paper displays.
         render_seconds=(config.display.type != 'epd29b'),
     )

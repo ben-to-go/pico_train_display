@@ -226,11 +226,13 @@ class Departure:
       departure_time: int,
       actual_departure_time: int,
       cancelled: bool,
+      identity: str = '',
   ):
     self._destination = destination
     self._departure_time = departure_time
     self._actual_departure_time = actual_departure_time
     self._cancelled = cancelled
+    self._identity = identity
 
   @property
   def destination(self) -> str:
@@ -247,6 +249,11 @@ class Departure:
   @property
   def cancelled(self) -> bool:
     return self._cancelled
+
+  @property
+  def identity(self) -> str:
+    """The service's API identity, used to look up its calling points."""
+    return self._identity
 
   def __repr__(self) -> str:
     return (
@@ -348,12 +355,15 @@ def parse_departures(response_json, min_departure_time: int = 0) -> Station:
         d['location']['description'] for d in service['destination']
     )
 
+    metadata = service.get('scheduleMetadata', {})
+
     departures.append(
         Departure(
             destinations,
             _to_hhmm(booked),
             _to_hhmm(departure.get('realtimeForecast') or booked),
             departure.get('isCancelled', False),
+            metadata.get('uniqueIdentity', ''),
         )
     )
 
@@ -385,6 +395,41 @@ def get_departures(
   )
 
 
+def get_calling_points(
+    identity: str,
+    station: str,
+    access_token: str,
+    endpoint: str,
+    *,
+    buffer: memoryview | None = None,
+    ssl_context: ssl.SSLContext | None = None,
+) -> tuple[str, ...]:
+  """Stations a service calls at after the one we are standing at.
+
+  A separate request per service, which is why only the first departure's
+  calling points are ever fetched.
+  """
+  response_json = _get_json(
+      endpoint + '/rtt/service?uniqueIdentity=' + identity,
+      access_token,
+      buffer,
+      ssl_context,
+  )
+
+  names = []
+  passed_us = False
+  for location in response_json.get('service', {}).get('locations') or []:
+    detail = location.get('location', {})
+    if passed_us:
+      names.append(detail.get('description', ''))
+    elif station in (detail.get('shortCodes') or []):
+      passed_us = True
+
+  del response_json
+  gc.collect()
+  return tuple(names)
+
+
 class DepartureUpdater:
   """Class that updates departures for a given station periodically."""
 
@@ -407,6 +452,8 @@ class DepartureUpdater:
     self._departures = Station(station, tuple())
     self._stale = True
     self._fetched = False
+    self._calling_points = ()
+    self._calling_points_identity = None
     self._buffer = bytearray(_MAXRESPONSE_SIZE)
     self._memoryview = memoryview(self._buffer)
     self._ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -454,6 +501,43 @@ class DepartureUpdater:
       self._departures = departures
       self._stale = False
       self._fetched = True
+
+    self._update_calling_points(departures)
+
+  def _update_calling_points(self, board: Station):
+    """Fetches calling points for the first departure, if they've changed.
+
+    One extra request per board at most, and none at all while the same train
+    is still at the top, which keeps well clear of the API's rate limit.
+    """
+    identity = board.departures[0].identity if board.departures else None
+    if identity == self._calling_points_identity:
+      return
+
+    points = ()
+    if identity:
+      try:
+        points = get_calling_points(
+            identity,
+            self._station,
+            self._access_token,
+            self._endpoint,
+            buffer=self._memoryview,
+            ssl_context=self._ssl_context,
+        )
+      except Exception:
+        # Rate limited, or the service went away. The board is still worth
+        # showing, just without the calling points.
+        identity = None
+
+    with self._lock:
+      self._calling_points = points
+      self._calling_points_identity = identity
+
+  def calling_points(self) -> tuple[str, ...]:
+    """Stations the first departure calls at."""
+    with self._lock:
+      return self._calling_points
 
   def stale(self) -> bool:
     """Whether the departures on show failed to refresh."""
