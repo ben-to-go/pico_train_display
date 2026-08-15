@@ -23,9 +23,9 @@ import fonts
 import trains
 
 
-# Real platform indicators number the departures and scroll the first one's
-# calling points along the middle line.
-_ORDINALS = ('1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th')
+# The next train carries no number and the board counts no further than 3rd,
+# as a real indicator does.
+_ORDINALS = ('', '2nd', '3rd')
 _CALLING_AT = 'Calling at: '
 _NO_DEPARTURES = 'No more departures today'
 _ELLIPSIS = '..'
@@ -38,10 +38,8 @@ _COLUMN_GAP = 4
 _SCROLL_STEP = 1
 _SCROLL_GAP = 24
 
-# How long each of the later departures gets on the third line, and how far
-# the board counts: real indicators go no further than 3rd.
+# How long each of the later departures gets on the third line.
 _ALTERNATE_SECONDS = 8
-_MAX_DEPARTURES = 3
 
 # Pixels square, in the bottom right corner.
 _STALE_DOT_SIZE = 2
@@ -291,7 +289,7 @@ class DepartureWidget(Widget):
     self._width = width
     self._status_font = status_font if status_font else font
     self._max_clock_width = self._font.calculate_bounds('00:00')[0]
-    self._max_ordinal_width = self._font.calculate_bounds(_ORDINALS[0])[0]
+    self._max_ordinal_width = self._font.calculate_bounds(_ORDINALS[-1])[0]
 
     self._last_departure = None
     self._last_ordinal = None
@@ -365,8 +363,8 @@ class MainWidget(Widget):
     super().__init__(screen)
     self._departure_updater = departure_updater
 
-    # One size of text for the three rows of trains; the clock alone on the
-    # bottom row is taller, filling the row that descenders need elsewhere.
+    # Four rows of the same height. Text uses seven of each row's nine pixels
+    # and leaves two for descenders; the clock, having none, fills all nine.
     self._clock_widget = ClockWidget(screen, clock_font, render_seconds)
     self._no_departures_widget = NoDeparturesWidget(screen, font)
     self._calling_at_widget = ScrollingTextWidget(screen, font, _CALLING_AT)
@@ -383,7 +381,6 @@ class MainWidget(Widget):
             self._clock_widget.bounds()[1],
         ),
     )
-    self._num_departures = -1
     self._last_stale = None
 
   def render(self, now: tuple[int, ...]):
@@ -406,7 +403,7 @@ class MainWidget(Widget):
 
       # The third line works through the rest of the departures in turn.
       later, ordinal = None, ''
-      later_count = min(len(departures), _MAX_DEPARTURES) - 1
+      later_count = min(len(departures), len(_ORDINALS)) - 1
       if later_count > 0:
         seconds = now[3] * 3600 + now[4] * 60 + now[5]
         index = 1 + (seconds // _ALTERNATE_SECONDS) % later_count
@@ -415,20 +412,20 @@ class MainWidget(Widget):
           later, ordinal, 0, self._rows[2], *self._later_widget.bounds()
       )
     else:
-      if self._num_departures != 0:
-        self._screen.fill_rect(0, 0, self._screen.width, self._rows[3], 0)
-        self._calling_at_widget.set_text('')
-        self._first_widget.render(None, '', 0, self._rows[0],
-                                  *self._first_widget.bounds())
-        self._later_widget.render(None, '', 0, self._rows[2],
-                                  *self._later_widget.bounds())
+      need_refresh |= self._first_widget.render(
+          None, '', 0, self._rows[0], *self._first_widget.bounds()
+      )
+      self._calling_at_widget.set_text('')
+      need_refresh |= self._calling_at_widget.render(
+          0, self._rows[1], self._screen.width, self._text_height
+      )
+      need_refresh |= self._later_widget.render(
+          None, '', 0, self._rows[2], *self._later_widget.bounds()
+      )
       need_refresh |= self._no_departures_widget.render(
           0, self._rows[1], self._screen.width,
           self._no_departures_widget.bounds()[1]
       )
-
-    need_refresh |= self._num_departures != len(departures)
-    self._num_departures = len(departures)
 
     clock_bounds = self._clock_widget.bounds()
     x = (self._screen.width - clock_bounds[0]) // 2
