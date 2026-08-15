@@ -21,9 +21,10 @@
 
 - The board survives the API being down.
 
-  Real Stoke Mandeville departures are baked into the firmware and shown if
-  the first fetch fails, so the display has something on it rather than
-  nothing. A successful fetch replaces them and it never goes back. A two
+  A real weekday morning at Stoke Mandeville is baked into the firmware and
+  shown if the first fetch fails, so the display has something on it rather
+  than nothing. The stations the first train calls at are baked in beside it,
+  since fetching those is a second request the device cannot make either. A successful fetch replaces them and it never goes back. A two
   pixel dot in the bottom right corner is the only sign that what is on
   screen is not current.
 

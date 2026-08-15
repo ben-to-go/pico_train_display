@@ -288,6 +288,11 @@ def fallback_departures() -> Station:
   return parse_departures(json.loads(fallback.RESPONSE))
 
 
+def fallback_calling_points(station: str) -> tuple[str, ...]:
+  """Calling points for the first departure of the baked-in board."""
+  return parse_calling_points(json.loads(fallback.SERVICE), station)
+
+
 def _lineup_url(endpoint: str, station: str, filter_to: str) -> str:
   return (
       endpoint
@@ -395,27 +400,12 @@ def get_departures(
   )
 
 
-def get_calling_points(
-    identity: str,
-    station: str,
-    access_token: str,
-    endpoint: str,
-    *,
-    buffer: memoryview | None = None,
-    ssl_context: ssl.SSLContext | None = None,
-) -> tuple[str, ...]:
+def parse_calling_points(response_json, station: str) -> tuple[str, ...]:
   """Stations a service calls at after the one we are standing at.
 
-  A separate request per service, which is why only the first departure's
-  calling points are ever fetched.
+  Kept separate from fetching so that the service baked into the firmware
+  goes through exactly the same parsing as a live one.
   """
-  response_json = _get_json(
-      endpoint + '/rtt/service?uniqueIdentity=' + identity,
-      access_token,
-      buffer,
-      ssl_context,
-  )
-
   names = []
   passed_us = False
   for location in response_json.get('service', {}).get('locations') or []:
@@ -428,6 +418,31 @@ def get_calling_points(
   del response_json
   gc.collect()
   return tuple(names)
+
+
+def get_calling_points(
+    identity: str,
+    station: str,
+    access_token: str,
+    endpoint: str,
+    *,
+    buffer: memoryview | None = None,
+    ssl_context: ssl.SSLContext | None = None,
+) -> tuple[str, ...]:
+  """Requests the calling points for a service.
+
+  A separate request per service, which is why only the first departure's
+  calling points are ever fetched.
+  """
+  return parse_calling_points(
+      _get_json(
+          endpoint + '/rtt/service?uniqueIdentity=' + identity,
+          access_token,
+          buffer,
+          ssl_context,
+      ),
+      station,
+  )
 
 
 class DepartureUpdater:
@@ -495,6 +510,7 @@ class DepartureUpdater:
         self._stale = True
         if not self._fetched:
           self._departures = fallback_departures()
+          self._calling_points = fallback_calling_points(self._station)
       raise
 
     with self._lock:

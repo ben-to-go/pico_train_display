@@ -35,7 +35,7 @@ _COLUMN_GAP = 4
 
 # Pixels the calling points move per frame, and the blank run between the end
 # of the text and the start of it coming round again.
-_SCROLL_STEP = 1
+_SCROLL_STEP = 2
 _SCROLL_GAP = 24
 
 # How long each of the later departures gets on the third line.
