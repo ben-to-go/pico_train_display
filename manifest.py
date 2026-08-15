@@ -26,6 +26,7 @@ package('setup', base_path='src')
 
 module('config.py', base_path='src')
 module('display.py', base_path='src')
+module('fallback.py', base_path='src')
 module('epd29b.py', base_path='src')
 module('fonts.py', base_path='src')
 module('logging.py', base_path='src')

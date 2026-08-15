@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- The board survives the API being down.
+
+  Real Stoke Mandeville departures are baked into the firmware and shown if
+  the first fetch fails, so the display has something on it rather than
+  nothing. A successful fetch replaces them and it never goes back. A two
+  pixel dot in the bottom right corner is the only sign that what is on
+  screen is not current.
+
+  The device no longer resets when updates fail, and the API timeout is five
+  seconds rather than ten.
+
 - Moved to the next generation Realtime Trains API at `https://data.rtt.io`.
 
   Sign up at [api-portal.rtt.io](https://api-portal.rtt.io/) and put the token
