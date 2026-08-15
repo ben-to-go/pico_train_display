@@ -18,8 +18,21 @@
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """Configuration class for storing config options."""
 
+import os
+
 import display
 import time_range
+
+
+def _token_from_env() -> str | None:
+  """RTT_TOKEN from the environment, if there is one.
+
+  Lets the token stay out of config.json while developing. The device has no
+  environment to read, and os.getenv only exists on ports that do, so this is
+  always None on hardware.
+  """
+  getenv = getattr(os, 'getenv', None)
+  return getenv('RTT_TOKEN') if getenv else None
 
 
 class RttConfig:
@@ -27,7 +40,7 @@ class RttConfig:
 
   def __init__(self, endpoint: str, token: str, update_interval: int):
     self.endpoint = endpoint
-    self.token = token
+    self.token = token or _token_from_env()
     self.update_interval = update_interval
 
   def validate(self):
