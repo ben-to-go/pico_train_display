@@ -88,3 +88,47 @@ class ScrollSpeedTest(unittest.TestCase):
 
 if __name__ == '__main__':
   unittest.main()
+
+
+class UnreadableConfigTest(unittest.TestCase):
+  """What a config this firmware cannot use raises.
+
+  main() catches these and shows the setup screen, so a board that has had a
+  setting removed underneath it asks to be set up again rather than resetting
+  in a loop. The types are the contract between the two.
+  """
+
+  _CAUGHT_BY_MAIN = (OSError, ValueError, TypeError)
+
+  def _assert_caught(self, cfg):
+    with self.assertRaises(self._CAUGHT_BY_MAIN):
+      config.load(cfg)
+
+  def _valid(self, **display):
+    settings = {'refresh': 60, 'flip': False, 'scroll_speed': 15}
+    settings.update(display)
+    return {
+        'station': 'SKM',
+        'destination': 'MYB',
+        'wifi': {'ssid': 'x', 'password': 'y'},
+        'rtt': {'endpoint': 'https://data.rtt.io', 'token': 't',
+                'update_interval': 120},
+        'display': settings,
+        'debug': {'log': False},
+    }
+
+  def test_a_setting_this_firmware_no_longer_has(self):
+    # What an old config looks like after a setting is dropped.
+    self._assert_caught(self._valid(some_removed_setting=''))
+
+  def test_a_value_out_of_range(self):
+    self._assert_caught(self._valid(refresh=0))
+
+  def test_a_missing_section(self):
+    cfg = self._valid()
+    del cfg['rtt']
+    self._assert_caught(cfg)
+
+  def test_the_config_we_ship_still_loads(self):
+    # The other direction: none of the above should catch a good one.
+    config.load(self._valid())

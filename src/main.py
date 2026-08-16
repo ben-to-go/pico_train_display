@@ -304,7 +304,14 @@ def main():
   try:
     with open('config.json', 'r') as f:
       config = config_module.load(json.load(f))
-  except OSError:
+  except (OSError, ValueError, TypeError) as e:
+    # No config, or one this firmware cannot read: a setting that has since
+    # been removed, a value out of range, a file that got truncated. They all
+    # leave nothing to run on, so ask for it again. Resetting instead just
+    # loops, because the setup screen only appears when there is no config and
+    # an unreadable one still counts as a config.
+    logging.log('No usable config, starting setup.')
+    sys.print_exception(e)
     screen = display.create()
     try:
       asyncio.run(setup(screen))
