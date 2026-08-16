@@ -56,8 +56,14 @@ act-depend:
 		| bash -s -- -b bin $(ACT_VERSION)
 
 # Runs .github/workflows/build.yml in containers. The firmware lands zipped
-# under artifacts/, the way the runner uploads it.
+# under artifacts/, the way the runner uploads it, and is unpacked beside the
+# zips afterwards so the uf2 files are there to flash. That is this target's
+# doing, not the workflow's.
 # The flags are in .actrc, so running act by hand behaves the same. act ignores
 # job-level permissions, so this says nothing about the tag-gated release step.
 act:
 	@$(ACT)
+	@for z in artifacts/*/*/*.zip; do \
+		[ -e "$$z" ] || continue; \
+		unzip -oq "$$z" -d "$$(dirname "$$z")"; \
+	done
