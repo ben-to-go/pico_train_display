@@ -1,22 +1,40 @@
 name: Build
-on: [push]
+on:
+  push:
+  # Lets a build be started by hand, from the Actions tab or `gh workflow run`.
+  workflow_dispatch:
+
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Run tests
+      run: python3 -m unittest discover -s tests
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    # The default token is read-only, which is not enough to attach the
+    # firmware to a release.
+    permissions:
+      contents: write
+    strategy:
+      # One board failing should not hide the state of the other.
+      fail-fast: false
+      matrix:
+        board: [RPI_PICO_W, RPI_PICO2_W]
     steps:
     - uses: actions/checkout@v4
       with:
         path: main
-    - name: Run tests
-      run: |
-        pushd main
-        python3 -m unittest discover -s tests
-        popd
     - name: Checkout MicroPython
       uses: actions/checkout@v4
-      with: 
+      with:
         repository: micropython/micropython
-        ref: refs/tags/v1.22.1
+        # Pinned so a given tag of this project always builds the same
+        # firmware. RP2350, and so the Pico 2 W, needs at least v1.26.
+        ref: refs/tags/v1.28.0
         path: micropython
     - name: Install build tools
       run: |
@@ -31,27 +49,33 @@ jobs:
     - name: Get MicroPython submodules
       run: |
         pushd micropython
-        make -C ports/rp2 BOARD=RPI_PICO_W submodules
+        make -C ports/rp2 BOARD=${{ matrix.board }} submodules
         popd
     - name: Build MicroPython with manifest.
       run: |
         pushd micropython
         cd ports/rp2
-        make -j 4 BOARD=RPI_PICO_W FROZEN_MANIFEST=../../../../main/manifest.py
+        make -j 4 BOARD=${{ matrix.board }} FROZEN_MANIFEST=../../../../main/manifest.py
+        popd
+    - name: Check firmware suits the board
+      run: |
+        pushd micropython/ports/rp2/build-${{ matrix.board }}
+        python3 $GITHUB_WORKSPACE/main/tools/check_firmware.py firmware.uf2 \
+          --board ${{ matrix.board }} --elf firmware.elf
         popd
     - name: Rename UF2
       run: |
         pushd micropython
-        mv ports/rp2/build-RPI_PICO_W/firmware.uf2 \
-          ports/rp2/build-RPI_PICO_W/pico_train_display.uf2
+        mv ports/rp2/build-${{ matrix.board }}/firmware.uf2 \
+          ports/rp2/build-${{ matrix.board }}/pico_train_display_${{ matrix.board }}.uf2
         popd
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: pico_train_display
-        path: micropython/ports/rp2/build-RPI_PICO_W/pico_train_display.uf2
+        name: pico_train_display_${{ matrix.board }}
+        path: micropython/ports/rp2/build-${{ matrix.board }}/pico_train_display_${{ matrix.board }}.uf2
     - name: Release
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: micropython/ports/rp2/build-RPI_PICO_W/pico_train_display.uf2
+        files: micropython/ports/rp2/build-${{ matrix.board }}/pico_train_display_${{ matrix.board }}.uf2
