@@ -71,12 +71,16 @@ class DisplayConfig:
       flip: bool = False,
       active_time: str | None = None,
       scroll_speed: int = 60,
+      contrast: int = 255,
   ):
     self.refresh = refresh
     self.flip = flip
     self.active_time = time_range.parse(active_time) if active_time else None
     # Pixels a second, so it does not depend on refresh.
     self.scroll_speed = scroll_speed
+    # How hard the panel is driven, 0 to 255. The chip powers up at 127, which
+    # is dim enough to be hard to read in daylight.
+    self.contrast = contrast
 
   def validate(self):
     if self.refresh <= 0:
@@ -87,6 +91,8 @@ class DisplayConfig:
       )
     if not isinstance(self.flip, bool):
       raise ValueError(f'Display flip must be a boolean! flip={self.flip}')
+    if not 0 <= self.contrast <= 255:
+      raise ValueError(f'Display contrast must be 0-255! {self.contrast=}')
 
 
 class DebugConfig:
