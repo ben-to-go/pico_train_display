@@ -118,7 +118,7 @@ failed to refresh, cleared when they are current. Small enough to be invisible
 across a room, obvious if you know to look.
 
 It is redrawn every frame rather than only when it changes, so it survives
-anything that clears the screen, such as waking from out of hours.
+anything that clears the screen.
 
 **The dot says the data is old. It does not say why.** Wifi down, token
 revoked, API retired, or a response that no longer parses all look the same

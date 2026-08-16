@@ -47,10 +47,6 @@ class Display(framebuf.FrameBuffer):
     """Puts display to sleep."""
     ...
 
-  def awake(self) -> None:
-    """Wakes up a display."""
-    ...
-
 
 def create(flip_display: bool = False):
   """Builds the display, wired as this project wires it.
