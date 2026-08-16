@@ -1,96 +1,36 @@
 # Release Notes
 
-## Unreleased
+## v2.0.0
 
-- The Pico 2 W is the board this runs on, and the only one.
+Rebuilt around the hardware it actually runs on, and around the API not always
+being there.
 
-  Support for the original Pico W is gone: nobody working on this has one to
-  test against, and shipping firmware nobody can try is worse than shipping
-  none. Each build is still checked before it is published: that the UF2
-  family matches the board, that the firmware ends before the filesystem
-  does, that static RAM leaves room for the heap, and that the application is
-  actually frozen into it.
-
-- Dropped the experimental e-Paper display.
-
-  The project supports the SSD1322 it was built for and nothing else. The
-  driver, the branches that dodged around e-Paper's slow refresh and the
-  clock's `render_seconds`, which only ever existed to turn seconds off for
-  it, are all gone.
-
-  `display.type` goes with them. There was nothing left to choose between, so
-  it is out of `config.json` and the setup portal; remove it from an existing
-  config.
-
-- The board renders at 60Hz, and the calling points scroll at a fixed speed.
-
-  Scrolling used to advance a fixed number of pixels per frame, so it ran at
-  whatever pace the refresh rate happened to give it. It is now its own
-  setting, `display.scroll_speed`, in pixels a second and measured against the
-  clock, so the two can be changed without disturbing each other.
-
-- The board is laid out like a real platform indicator.
-
-  Four rows: the next train, the stations it calls at scrolling along the
-  middle, the train after it, and the clock alone on the bottom row. The
-  rotating third row is numbered 2nd or 3rd; the next train needs no telling.
-
-  Every row is the same nine pixels, as on the real thing. Text uses seven
-  of them and leaves two for descenders; the clock, which has none, fills all
-  nine. That is the only reason it reads as larger. The bold font is gone and
-  the tall one is now nine pixels of digits and a colon.
-
-  The rows are spread down the screen with the gap above the first matching
-  the gap below the clock. See `docs/display-format.md`.
-
-  Once the last train has gone the board says "No more departures today"
-  rather than welcoming you to the station.
-
-- The board survives the API being down.
-
-  A real weekday morning at Stoke Mandeville is baked into the firmware and
-  shown if the first fetch fails, so the display has something on it rather
-  than nothing. The stations the first train calls at are baked in beside it,
-  since fetching those is a second request the device cannot make either. A successful fetch replaces them and it never goes back. A two
-  pixel dot in the bottom right corner is the only sign that what is on
-  screen is not current.
-
-  The device no longer resets when updates fail, and the API timeout is five
-  seconds rather than ten.
-
+- Drives the panel over 8080 8-bit parallel instead of SPI.
+- Runs on the Pico 2 W, and only the Pico 2 W.
 - Moved to the next generation Realtime Trains API at `https://data.rtt.io`.
+- Laid out like a real platform indicator, measured off a photograph of one.
+- Keeps showing departures when the wifi, the clock or the API give out.
+- Polls inside the API's rate limit, and backs off when it is refused.
+- Gained a desktop simulator, a one command firmware build and a build guide.
+- Lost the proxy server, the e-Paper display and the fast train icon.
 
-  Sign up at [api-portal.rtt.io](https://api-portal.rtt.io/) and put the token
-  in `rtt.token`; `rtt.username` and `rtt.password` are gone. The endpoint
-  default has changed, so existing `config.json` files need updating.
+### Breaking
 
-- Removed "slow stations" and the fast train icon.
+Nothing from v1.1.0 carries over untouched.
 
-  The board now shows time, destination and status, and nothing else. The
-  `slow_station` setting is gone and must be removed from `config.json`.
-
-- Removed the optional web server in `server/`.
-
-  It existed to add calling-at stations for the fast train icon and to trim
-  the old API's responses, and neither is needed now.
+- **Rewire it.** SPI is gone. See
+  [docs/build-your-own.md](docs/build-your-own.md).
+- **A Pico W will not run this.** The release carries one image, for the
+  Pico 2 W.
+- **Start `config.json` again.** `rtt.endpoint` and `rtt.token` replace
+  `rtt.username` and `rtt.password`, and `display.type` and `slow_station` are
+  gone. Deleting the file and using the setup screen is the quickest way.
 
 ## v1.1.0
 
-- Added optional supoprt for "slow stations".
-
-  Trains that don't stop at a slow station are marked as "fast", showing a small
-  icon.
-
-  NB: To use this feature you need to run a the custom web server below to get
-  the calling stations.
-
-- Implemented custom web server.
-
-  This is so that we can reduce the JSON response message from RTT to only the
-  fields we're interested in, and to add additional calling-at stations that are
-  too memory-intensive to run on-device.
-
-- Fixed incorrect destination station for cancelled trains.
+- Optional "slow stations", marking trains that do not stop at one as fast.
+- A custom web server, to trim RTT responses and add calling-at stations.
+- Fixed the destination shown for cancelled trains.
 
 ## v1.0.0
 

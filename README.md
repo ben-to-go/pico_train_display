@@ -1,101 +1,55 @@
 # 🚂 Pico train departure display 🚂
 
-A MicroPython-based application for displaying near-realtime UK railway
-departure times. It runs on a
-[Raspberry Pi Pico 2 W](https://www.raspberrypi.com/products/raspberry-pi-pico-2/)
-microcontroller, with an SSD1322-based 256x64 OLED display, driven over its
-8080 8-bit parallel interface.
-
-This project uses the
-[Realtime Trains API](https://api-portal.rtt.io/) as its data source,
-and is heavily inspired by [several other projects](#credits).
-
-The layout copies a real National Rail platform indicator, down to the row
-geometry: four rows of nine pixels, text using seven of them with two for
-descenders, and the clock, which has none, filling all nine.
+The board from the platform, on your shelf. It shows the next trains from your
+station to the one you actually travel to, and nothing else.
 
 | A real platform indicator | This display |
 |---|---|
 | <img src="https://blog.balena.io/wp-content/uploads/2019/07/hu788k5bih421.jpg" width="380"> | <img src="docs/images/platform_indicator.png" width="380"> |
 
-Both are real: the right-hand board is a genuine Chiltern Railways morning
-from Stoke Mandeville, calling points and all, exactly as the API returned it,
-in the amber the panel actually glows.
+Both are real. The right-hand board is a genuine Chiltern Railways morning from
+Stoke Mandeville, calling points and all, exactly as the API returned it, in
+the amber the panel actually glows.
 
-How that was measured, and what it means for the fonts, is in
-[docs/display-format.md](docs/display-format.md). What the board does when the
-wifi, the clock or the API give out is in
-[docs/fallback.md](docs/fallback.md).
+- Live times, delays and cancellations, from
+  [Realtime Trains](https://api-portal.rtt.io/).
+- Set up from your phone. Moving house does not mean reflashing it.
+- Keeps showing departures when the wifi or the API drops out.
+- Two boards and fifteen wires. Nothing to solder, nothing to print.
 
-## What you get
+## Build one
 
-- **The real layout**, not a dashboard that happens to show trains. Four rows
-  of nine pixels, measured off a photograph of a National Rail indicator, in
-  the amber the panel actually glows.
-- **Live departures** for any station and destination, with the stations the
-  next train calls at scrolling along the middle row and the one after it
-  rotating below.
-- **Set up from a phone.** On first boot the board serves its own page over
-  its own wifi, so the station, your network and the API token are typed in
-  rather than compiled in. Nothing is baked into the firmware you download.
-- **It keeps working when things do not.** A real weekday morning is baked in
-  and shown if the API cannot be reached, so the board has departures on it
-  either way. One pixel in the corner is the only sign the data is not
-  current.
-- **It sleeps out of hours**, if you give it a window, and wakes itself up.
-- **No soldering, no 3D printing.** Two boards and fifteen jumper wires
-  between them.
-- **Firmware you can download**, or build in ten seconds if you would rather
-  change it, with a simulator that draws the panel in your terminal so you do
-  not need the hardware to work on the display.
-
-## Introduction
-
-The goal of this project is to display a live departure board for a station,
-showing trains departing for a specific destination. It's written entirely in
-Python and should be able to run on any microcontroller that is capable of
-running MicroPython.
-
-It runs on a
-[Raspberry Pi Pico 2 W](https://www.raspberrypi.com/products/raspberry-pi-pico-2/)
-and an SSD1322 panel, which is the only combination anyone has to hand to test
-against.
-
-## Building your own display
-
-Nothing to solder and nothing to print. The Pico comes with its headers
-already on, the panel has its own, and jumper wires go straight between the
-two, so it is one sitting and no tools you do not already own.
+The Pico comes with its headers already on, the panel has its own, and jumper
+wires go straight between the two, so it is one sitting and no tools you do not
+already own.
 
 [docs/build-your-own.md](docs/build-your-own.md) has the parts and the wiring.
 
-## Installation
+## Install it
 
-The easiest way is to install the Pico Train Dispaly software is to download the
-pre-built image from the
-[latest release](https://github.com/ben-to-go/pico_train_display/releases/latest).
-To install:
+If the hardware is already built: download
+[`pico_train_display_RPI_PICO2_W.uf2`](https://github.com/ben-to-go/pico_train_display/releases/latest/download/pico_train_display_RPI_PICO2_W.uf2)
+from the [latest release](https://github.com/ben-to-go/pico_train_display/releases/latest),
+hold **BOOTSEL** while plugging the Pico into your computer, and drag the file
+onto the drive that appears.
 
-1. Press and hold down the BOOTSEL button while you connect the other end of the
-   micro-USB cable to your computer. This will put the Raspberry Pi Pico into
-   USB mass storage device mode.
-1. Copy
-   [`pico_train_display_RPI_PICO2_W.uf2`](https://github.com/ben-to-go/pico_train_display/releases/latest/download/pico_train_display_RPI_PICO2_W.uf2)
-   to the mounted device. Once complete, it should automatically disconnect.
-1. Connect the Raspberry Pi Pico to a power supply. The display should now show
-   a welcome message with details on how to connect to the setup website.
-1. Follow the on-screen instructions. Once the settings are saved, the device
-   should automatically restart.
+It restarts into a setup screen and tells you what to do from there. The build
+guide covers [that](docs/build-your-own.md#set-it-up), and how to
+[change the settings](docs/build-your-own.md#changing-the-settings-later)
+afterwards.
 
-You should now have a fully configured Pico-powered train display!
+## Why it looks like that
 
-### Reset settings
+The layout is copied rather than designed. Four rows of nine pixels, text using
+seven of them and leaving two for descenders, and the clock, which has no
+descenders, filling all nine — which is the only reason it reads as larger.
+[docs/display-format.md](docs/display-format.md) has the photograph it was
+measured from and what came of it.
 
-Settings are stored in flash memory as a JSON file called `config.json`. To
-reset all settings, simply delete this file. One easy way to do this is to reset
-the entire flash memory, which can be done by following the official
-[resetting flash memory](https://www.raspberrypi.com/documentation/microcontrollers/raspberry-pi-pico.html#resetting-flash-memory)
-instructions. Once flashed, you'll need to re-install the software again.
+It is also built to carry on when the things it depends on do not. The wifi,
+the clock and the API can each fail without stopping the rest, and a real
+weekday morning is baked into the firmware for the case where nothing has ever
+loaded. [docs/fallback.md](docs/fallback.md) walks the whole chain.
 
 ## Development
 
@@ -124,10 +78,8 @@ takes a few minutes, a rebuild after changing `src/` takes about ten seconds.
 
 This is a fork. [Tom Ward](https://github.com/tomwardio) wrote
 [pico_train_display](https://github.com/tomwardio/pico_train_display), which is
-everything this stands on: the driver, the widgets, the setup portal, the
-layout, and the idea of putting a departure board on a two pound
-microcontroller. Thank you for building it, and for the licence that let this
-exist.
+everything this stands on: the driver, the widgets, the setup portal and the
+layout. Thank you for building it, and for the licence that let this exist.
 
 The thanks that follow are his.
 
