@@ -22,6 +22,10 @@ jobs:
       contents: write
     steps:
     - uses: actions/checkout@v4
+      with:
+        # The firmware is named after git describe, which needs the tags and
+        # the history. The default checkout has neither.
+        fetch-depth: 0
     - name: Install build tools
       run: make firmware-depend
     - name: Build firmware
@@ -31,10 +35,10 @@ jobs:
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: pico_train_display_RPI_PICO2_W
-        path: build/pico_train_display_RPI_PICO2_W.uf2
+        name: firmware
+        path: build/*.uf2
     - name: Release
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: build/pico_train_display_RPI_PICO2_W.uf2
+        files: build/*.uf2
