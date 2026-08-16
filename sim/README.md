@@ -10,7 +10,7 @@ have:
 
 | | |
 |---|---|
-| `machine.py` | `Pin` and `SPI` |
+| `machine.py` | `Pin`, which is only ever asked to remember levels |
 | `parallel8080.py` | the panel's bus. Opening it creates the panel; the real one pokes GPIO registers from viper, which a desktop has no answer for |
 | `panel.py` | the SSD1322 itself, decoding the driver's command stream and drawing what it reconstructs |
 | `network.py` | a CYW43 that is always associated |
