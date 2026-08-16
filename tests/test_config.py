@@ -29,13 +29,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-# Stand-ins for what only exists on the device. display subclasses
-# framebuf.FrameBuffer, so it cannot be imported here at all; only displays()
-# is needed to validate a config. time_range uses micropython.const.
-_display = types.ModuleType('display')
-_display.displays = lambda: {'ssd1322'}
-sys.modules.setdefault('display', _display)
-
+# time_range uses micropython.const, which only exists on the device.
 _micropython = types.ModuleType('micropython')
 _micropython.const = lambda value: value
 sys.modules.setdefault('micropython', _micropython)
@@ -76,7 +70,7 @@ class ScrollSpeedTest(unittest.TestCase):
   """Scroll speed is its own setting, in pixels a second."""
 
   def _display(self, **kwargs):
-    settings = {'refresh': 60, 'type': 'ssd1322'}
+    settings = {'refresh': 60}
     settings.update(kwargs)
     return config.DisplayConfig(**settings)
 

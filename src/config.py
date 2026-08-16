@@ -20,7 +20,6 @@
 
 import os
 
-import display
 import time_range
 
 
@@ -69,13 +68,11 @@ class DisplayConfig:
   def __init__(
       self,
       refresh: int,
-      type: str,
       flip: bool = False,
       active_time: str | None = None,
       scroll_speed: int = 60,
   ):
     self.refresh = refresh
-    self.type = type
     self.flip = flip
     self.active_time = time_range.parse(active_time) if active_time else None
     # Pixels a second, so it does not depend on refresh.
@@ -88,8 +85,6 @@ class DisplayConfig:
       raise ValueError(
           f'Display scroll speed must be > 0! scroll_speed={self.scroll_speed}'
       )
-    if self.type not in display.displays():
-      raise ValueError(f'Unrecognized display name! type={self.type}')
     if not isinstance(self.flip, bool):
       raise ValueError(f'Display flip must be a boolean! flip={self.flip}')
 

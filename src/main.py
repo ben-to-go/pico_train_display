@@ -184,7 +184,7 @@ def _render_thread(
 def run(config: config_module.Config):
   logging.log('Starting...')
 
-  screen = display.create(config.display.type, config.display.flip)
+  screen = display.create(config.display.flip)
   main_running = _thread.allocate_lock()
   thread_running = _thread.allocate_lock()
   try:

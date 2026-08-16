@@ -5,9 +5,13 @@
 - Dropped the experimental e-Paper display.
 
   The project supports the SSD1322 it was built for and nothing else. The
-  driver, the setup portal option and the branches that dodged around
-  e-Paper's slow refresh are gone, including the clock's `render_seconds`,
-  which only ever existed to turn seconds off for it.
+  driver, the branches that dodged around e-Paper's slow refresh and the
+  clock's `render_seconds`, which only ever existed to turn seconds off for
+  it, are all gone.
+
+  `display.type` goes with them. There was nothing left to choose between, so
+  it is out of `config.json` and the setup portal; remove it from an existing
+  config.
 
 - The board renders at 60Hz, and the calling points scroll at a fixed speed.
 

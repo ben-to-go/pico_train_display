@@ -12,10 +12,9 @@
   },
   "display": {
     "refresh": 60,
-    "type": "ssd1322",
     "flip": false,
     "active_time": "",
-    "scroll_speed": 60
+    "scroll_speed": 15
   },
   "debug": {
     "log": false

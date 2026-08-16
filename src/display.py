@@ -16,13 +16,10 @@
 # COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 # IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-"""Base class and factory for creating displays instances."""
+"""Base class and factory for the SSD1322 this project drives."""
 
 import framebuf
 import machine
-
-
-_DEFAULT_DISPLAY = 'ssd1322'
 
 
 # TODO: Make this a proper ABC when Micropython supports abc module.
@@ -56,15 +53,8 @@ class Display(framebuf.FrameBuffer):
     ...
 
 
-def displays():
-  return {_DEFAULT_DISPLAY}
-
-
-def create(name: str = _DEFAULT_DISPLAY, flip_display: bool = False):
-  """Factory function to create display."""
-  if name.lower() != _DEFAULT_DISPLAY:
-    raise ValueError('Unrecognized display "{}"!'.format(name))
-
+def create(flip_display: bool = False):
+  """Builds the display, wired as this project wires it."""
   import ssd1322
 
   spi = machine.SPI(
