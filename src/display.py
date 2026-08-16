@@ -19,7 +19,6 @@
 """Base class and factory for the SSD1322 this project drives."""
 
 import framebuf
-import machine
 
 
 # TODO: Make this a proper ABC when Micropython supports abc module.
@@ -54,16 +53,13 @@ class Display(framebuf.FrameBuffer):
 
 
 def create(flip_display: bool = False):
-  """Builds the display, wired as this project wires it."""
+  """Builds the display, wired as this project wires it.
+
+  The panel is strapped for 8080 8-bit parallel, so the wiring is GP0-GP7 for
+  the data bus, GP8 write strobe, GP9 data/command, GP10 reset, GP11 chip
+  select. parallel8080 explains why the data lines have to be those eight.
+  """
+  import parallel8080
   import ssd1322
 
-  spi = machine.SPI(
-      0, baudrate=8_000_000, sck=machine.Pin(18), mosi=machine.Pin(19)
-  )
-  return ssd1322.SSD1322(
-      spi,
-      dc=machine.Pin(20),
-      cs=machine.Pin(17),
-      rst=machine.Pin(21),
-      flip_display=flip_display,
-  )
+  return ssd1322.SSD1322(parallel8080.ParallelBus(), flip_display=flip_display)

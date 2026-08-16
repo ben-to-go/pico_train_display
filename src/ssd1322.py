@@ -21,35 +21,25 @@
 Datasheet: https://www.hpinfotech.ro/SSD1322.pdf
 """
 
-import time
-
 import framebuf
-import machine
 
 import display
 
 
 class SSD1322(display.Display):
-  """SSD1322 SPI-4 display driver."""
+  """SSD1322 driver, talking to the panel over an 8080 8-bit parallel bus."""
 
   def __init__(
       self,
-      spi: machine.SPI,
-      cs: machine.Pin,
-      dc: machine.Pin,
-      rst: machine.Pin,
+      bus,
       width: int = 256,
       height: int = 64,
       flip_display: bool = False,
   ):
-    self.spi = spi
-    self.cs = cs
-    self.dc = dc
-    self.rst = rst
-
-    self.cs.init(self.cs.OUT, value=1)
-    self.dc.init(self.dc.OUT, value=0)
-    self.rst.init(self.rst.OUT, value=1)
+    self._bus = bus
+    # Commands go out one byte at a time, often enough that allocating a
+    # buffer for each would be churn the collector does not need.
+    self._cmd = bytearray(1)
 
     self._width = width
     self._height = height
@@ -92,10 +82,7 @@ class SSD1322(display.Display):
     self.flush()
 
   def _reset(self):
-    self.rst(0)
-    time.sleep_ms(50)
-    self.rst(1)
-    time.sleep_ms(100)
+    self._bus.reset()
 
   @property
   def width(self) -> int:
@@ -119,19 +106,14 @@ class SSD1322(display.Display):
     self.write_cmd(0xAF)
 
   def write_cmd(self, cmd, *args):
-    self.dc(0)
-    self.cs(0)
-    self.spi.write(bytearray([cmd]))
-    self.cs(1)
+    self._cmd[0] = cmd
+    self._bus.write(self._cmd, 0)
 
     if len(args) > 0:
       self.write_data(bytearray(args))
 
   def write_data(self, data):
-    self.dc(1)
-    self.cs(0)
-    self.spi.write(data)
-    self.cs(1)
+    self._bus.write(data, 1)
 
   def flush(self):
     offset = (480 - self._width) // 2

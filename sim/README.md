@@ -4,14 +4,15 @@ Runs the firmware on your machine and draws the 256x64 panel in the terminal,
 so the display can be worked on without a Pico or a screen.
 
 It is a fake display and nothing else. `main.py` runs unmodified, against the
-project's own `config.json`, talking to the real Realtime Trains API. Four
+project's own `config.json`, talking to the real Realtime Trains API. Five
 modules ahead of `src/` on `MICROPYPATH` stand in for what a desktop does not
 have:
 
 | | |
 |---|---|
-| `machine.py` | `Pin` and `SPI`. Opening the display's bus creates the panel |
-| `panel.py` | the SSD1322 itself, decoding the driver's SPI stream and drawing what it reconstructs |
+| `machine.py` | `Pin` and `SPI` |
+| `parallel8080.py` | the panel's bus. Opening it creates the panel; the real one pokes GPIO registers from viper, which a desktop has no answer for |
+| `panel.py` | the SSD1322 itself, decoding the driver's command stream and drawing what it reconstructs |
 | `network.py` | a CYW43 that is always associated |
 | `ntptime.py` | NTP, since the host clock is already right |
 
@@ -20,6 +21,10 @@ the real SSD1322 command stream `src/ssd1322.py` writes (`0x15` column
 address, `0x75` row address, `0x5C` write-RAM, re-map, sleep and wake) and
 reconstructs the picture the panel would be showing. The driver, the GS4_HMSB
 framebuffer packing and the widget layout are all genuinely exercised.
+
+What the simulator cannot tell you is anything electrical. `parallel8080.py`
+replaces the bus, so the pin assignment, the write strobe and its timing are
+between you and the hardware.
 
 `run.py` exists for the two things a stand-in module cannot do: the firmware's
 log would scribble over the panel, so it goes to `sim/out/firmware.log`, and
