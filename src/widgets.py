@@ -45,7 +45,7 @@ _SCROLL_GAP = 24
 _ALTERNATE_SECONDS = 8
 
 # Pixels square, in the bottom right corner.
-_STALE_DOT_SIZE = 2
+_STALE_DOT_SIZE = 1
 
 
 def _distribute(height: int, row_heights) -> tuple[int, ...]:

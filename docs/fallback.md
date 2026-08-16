@@ -63,7 +63,7 @@ that left in the past.
 
 ## The stale dot
 
-A 2x2 pixel dot in the bottom right corner, drawn while the departures on show
+A single pixel in the bottom right corner, drawn while the departures on show
 failed to refresh, cleared when they are current. Small enough to be invisible
 across a room, obvious if you know to look.
 
