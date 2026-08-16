@@ -42,7 +42,11 @@ import widgets
 
 
 _WIFI_CONNECT = 'Connecting'
-_LOADING_DEPARTURES = 'Loading train departures...'
+_SPLASH = 'CHOO CHOO'
+
+# Held for at least this long, so it is readable even when the first fetch
+# comes back immediately.
+_SPLASH_MIN_MS = 1000
 _DISPLAY_NOT_ACTIVE = 'Outside active hours, going to sleep...'
 
 _SETUP_WIFI_SSID = 'Pico Train Display'
@@ -205,13 +209,12 @@ def run(config: config_module.Config):
     _configure_time()
 
     logging.log('Get initial train departures')
-    # Don't show loading departures for e-Paper displays.
-    if config.display.type != 'epd29b':
-      widget = widgets.MessageWidget(
-          screen, _LOADING_DEPARTURES, fonts.DEFAULT_FONT
-      )
-      widget.render()
+    # e-Paper takes seconds to refresh, so it goes straight to the board.
+    splash = config.display.type != 'epd29b'
+    if splash:
+      widgets.MessageWidget(screen, _SPLASH, fonts.DEFAULT_FONT).render()
       screen.flush()
+    started = time.ticks_ms()
 
     # Get first set of departures synchonously. A failure here is not fatal:
     # the display falls back to the departures baked into the firmware, and
@@ -221,6 +224,12 @@ def run(config: config_module.Config):
     except Exception as e:
       logging.log('Initial train update failed, using fallback departures.')
       sys.print_exception(e)
+
+    if splash:
+      # However long the fetch took, whether it succeeded or fell back.
+      showing = time.ticks_diff(time.ticks_ms(), started)
+      if showing < _SPLASH_MIN_MS:
+        time.sleep_ms(_SPLASH_MIN_MS - showing)
     gc.collect()
 
     logging.log('Start render loop')

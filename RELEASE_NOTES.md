@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- The display says CHOO CHOO while it starts up.
+
+  Shown from the moment the screen is up until the first departures arrive,
+  and for a second at minimum so it is readable even when the API answers
+  straight away. It stays put if the API is slow, and if the fetch fails the
+  baked-in board follows it.
+
 - The board is laid out like a real platform indicator.
 
   Four rows: the next train, the stations it calls at scrolling along the
