@@ -22,8 +22,36 @@ Datasheet: https://www.hpinfotech.ro/SSD1322.pdf
 """
 
 import framebuf
+import micropython
 
 import display
+
+
+@micropython.viper
+def _changed_span(new: ptr8, old: ptr8, row_bytes: int, rows: int) -> int:
+  """First and last row where the two buffers differ, as first << 8 | last.
+
+  -1 when they are the same. Rows rather than bytes because the panel is
+  addressed by row, so a run of them is what can actually be sent.
+  """
+  first = -1
+  last = -1
+  r = 0
+  while r < rows:
+    base = r * row_bytes
+    i = 0
+    while i < row_bytes:
+      if new[base + i] != old[base + i]:
+        if first < 0:
+          first = r
+        last = r
+        break
+      i += 1
+    r += 1
+
+  if first < 0:
+    return -1
+  return (first << 8) | last
 
 
 class SSD1322(display.Display):
@@ -45,6 +73,14 @@ class SSD1322(display.Display):
     self._width = width
     self._height = height
     self._buffer = bytearray(self._width // 2 * self._height)
+    # What the panel is showing, so a flush can send only the rows that have
+    # changed since the last one. Costs 8KB of a heap with 450KB spare, and
+    # buys a tearing window a seventh of the size.
+    self._shadow = bytearray(len(self._buffer))
+    self._view = memoryview(self._buffer)
+    self._shadow_view = memoryview(self._shadow)
+    # The panel's RAM is whatever it powered up as until we have filled it.
+    self._all_dirty = True
 
     super().__init__(self._buffer, width, height, framebuf.GS4_HMSB)
     self.fill(0)
@@ -118,10 +154,34 @@ class SSD1322(display.Display):
     self._bus.write(data, 1)
 
   def flush(self):
+    """Sends the rows that have changed, and nothing else.
+
+    A whole frame is 8,192 bytes, which at the bus's 300ns a byte takes 2.5ms
+    of a 16.7ms refresh. The panel carries on scanning its RAM out to the
+    glass while that is being written, so anything looking at the screen
+    during those 2.5ms can catch part of the old frame below part of the new
+    one. Usually only the scrolling row has moved, so sending nine rows
+    instead of sixty-four makes that window much smaller. It cannot close it:
+    the SSD1322 has no tearing effect signal to sync to.
+    """
+    row_bytes = self._width // 2
+    if self._all_dirty:
+      first, last = 0, self._height - 1
+      self._all_dirty = False
+    else:
+      span = _changed_span(self._view, self._shadow_view, row_bytes, self._height)
+      if span < 0:
+        return
+      first, last = span >> 8, span & 0xFF
+
+    start = first * row_bytes
+    stop = (last + 1) * row_bytes
+
     offset = (480 - self._width) // 2
     col_start = offset // 4
     col_end = col_start + self.width // 4 - 1
     self.write_cmd(0x15, col_start, col_end)
-    self.write_cmd(0x75, 0, self._height - 1)
+    self.write_cmd(0x75, first, last)
     self.write_cmd(0x5C)
-    self.write_data(self._buffer)
+    self.write_data(self._view[start:stop])
+    self._shadow_view[start:stop] = self._view[start:stop]

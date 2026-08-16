@@ -126,8 +126,12 @@ class Panel:
       data = data[:-1]
 
     for i in range(0, len(data), 2):
+      # Columns are relative because the visible 256 pixels sit in the middle
+      # of the 480 the chip can address. Rows are not: row addresses are
+      # absolute, so a window covering part of the screen has to land where
+      # it was addressed rather than at the top.
       x = (self._col - self._col_start) * 4
-      y = self._row - self._row_start
+      y = self._row
       if 0 <= y < self.height and 0 <= x <= self.width - 4:
         b0, b1 = data[i], data[i + 1]
         o = y * self.width + x
