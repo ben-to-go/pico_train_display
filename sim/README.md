@@ -30,7 +30,7 @@ the setup portal asks for port 80, which a normal user may not bind.
 Build the MicroPython unix port once:
 
 ```sh
-make -C ~/micropython/ports/unix MICROPY_PY_FFI=0 MICROPY_PY_THREAD_GIL=1
+make unix-port          # or: make unix-port MICROPYTHON_DIR=/somewhere/else
 ```
 
 `MICROPY_PY_FFI=0` avoids needing `libffi-dev`. `MICROPY_PY_THREAD_GIL=1`
@@ -45,13 +45,31 @@ not be committed.
 ## Running
 
 ```sh
-sim/run.sh              # the panel, at its real 256x64
-sim/run.sh --compact    # braille cells, for terminals narrower than 256
+make sim                # the panel, at its real 256x64
+make sim-compact        # braille cells, for terminals narrower than 256
 ```
+
+Or `sim/run.sh` directly, which is all the Makefile does.
 
 The default view is one terminal cell per 1x2 pixels, so the panel appears at
 its true width and wants a 256 column terminal. With no `config.json` you get
 the setup portal on http://127.0.0.1:8088, exactly as the device serves it.
+
+## None of this reaches the device
+
+`manifest.py` freezes `src/` and nothing else, so no part of this directory is
+in the firmware. Searching a built image for the modules confirms it:
+
+```
+sim modules frozen into it:
+  panel.py   False
+  run.py     False
+  network.py False
+  machine.py False
+```
+
+(`ntptime` does appear in the firmware, but that is MicroPython's own, frozen
+by the board manifest. `machine` is a builtin C module there.)
 
 ## Limits
 
