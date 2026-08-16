@@ -18,8 +18,10 @@ Rebuilt around the Pico 2 W and the next generation Realtime Trains API at
 
 Nothing from v1.1.0 carries over untouched.
 
-- **Rewire it.** SPI is gone. See
-  [docs/build-your-own.md](docs/build-your-own.md).
+- **Rewire it.** SPI is gone. The panel chooses its interface from solder links
+  on the back and arrives set to parallel, so building one now needs no iron,
+  at the cost of eight more jumper wires.
+  [docs/build-your-own.md](docs/build-your-own.md) has the table.
 - **A Pico W will not run this.** The release carries one image, for the
   Pico 2 W.
 - **Start `config.json` again.** `rtt.endpoint` and `rtt.token` replace
