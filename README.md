@@ -15,47 +15,31 @@ microcontroller, with an SSD1322-based 256x64 OLED display, driven over its
 
 Both are real. The right-hand board is a genuine Chiltern Railways morning from
 Stoke Mandeville, calling points and all, exactly as the API returned it, in
-the amber the panel actually glows.
+the amber the panel actually glows. The layout was measured off the photograph
+beside it: [docs/display-format.md](docs/display-format.md).
 
 - Live times, delays and cancellations, from
   [Realtime Trains](https://api-portal.rtt.io/).
 - Set up from your phone. Moving house does not mean reflashing it.
-- Keeps showing departures when the wifi or the API drops out.
+- [Keeps showing departures](docs/fallback.md) when the wifi or the API
+  drops out.
 - Two boards and fifteen wires. Nothing to solder, nothing to print.
 
 ## Build one
 
 The Pico comes with its headers already on, the panel has its own, and jumper
 wires go straight between the two, so it is one sitting and no tools you do not
-already own.
+already own. [docs/build-your-own.md](docs/build-your-own.md) has the parts and
+the wiring.
 
-[docs/build-your-own.md](docs/build-your-own.md) has the parts and the wiring.
-
-## Install it
-
-If the hardware is already built: download
+Once it is wired up, or if you are updating one that already works: download
 [`pico_train_display_RPI_PICO2_W.uf2`](https://github.com/ben-to-go/pico_train_display/releases/latest/download/pico_train_display_RPI_PICO2_W.uf2)
 from the [latest release](https://github.com/ben-to-go/pico_train_display/releases/latest),
 hold **BOOTSEL** while plugging the Pico into your computer, and drag the file
-onto the drive that appears.
-
-It restarts into a setup screen and tells you what to do from there. The build
-guide covers [that](docs/build-your-own.md#set-it-up), and how to
-[change the settings](docs/build-your-own.md#changing-the-settings-later)
+onto the drive that appears. It restarts into a setup screen and tells you what
+to do from there, and the guide covers
+[changing the settings](docs/build-your-own.md#changing-the-settings-later)
 afterwards.
-
-## Why it looks like that
-
-The layout is copied rather than designed. Four rows of nine pixels, text using
-seven of them and leaving two for descenders, and the clock, which has no
-descenders, filling all nine — which is the only reason it reads as larger.
-[docs/display-format.md](docs/display-format.md) has the photograph it was
-measured from and what came of it.
-
-It is also built to carry on when the things it depends on do not. The wifi,
-the clock and the API can each fail without stopping the rest, and a real
-weekday morning is baked into the firmware for the case where nothing has ever
-loaded. [docs/fallback.md](docs/fallback.md) walks the whole chain.
 
 ## Development
 
