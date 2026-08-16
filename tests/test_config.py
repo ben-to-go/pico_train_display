@@ -72,5 +72,31 @@ class TokenFromEnvironmentTest(unittest.TestCase):
       rtt.validate()
 
 
+class ScrollSpeedTest(unittest.TestCase):
+  """Scroll speed is its own setting, in pixels a second."""
+
+  def _display(self, **kwargs):
+    settings = {'refresh': 60, 'type': 'ssd1322'}
+    settings.update(kwargs)
+    return config.DisplayConfig(**settings)
+
+  def test_defaults_when_not_configured(self):
+    self.assertEqual(60, self._display().scroll_speed)
+
+  def test_is_independent_of_the_refresh_rate(self):
+    slow = self._display(refresh=10, scroll_speed=90)
+    fast = self._display(refresh=60, scroll_speed=90)
+    self.assertEqual(slow.scroll_speed, fast.scroll_speed)
+
+  def test_must_be_positive(self):
+    for speed in (0, -30):
+      with self.subTest(scroll_speed=speed):
+        with self.assertRaises(ValueError):
+          self._display(scroll_speed=speed).validate()
+
+  def test_a_valid_pair_passes(self):
+    self._display(refresh=60, scroll_speed=45).validate()
+
+
 if __name__ == '__main__':
   unittest.main()

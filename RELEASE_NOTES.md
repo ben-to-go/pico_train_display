@@ -5,9 +5,9 @@
 - The board renders at 60Hz, and the calling points scroll at a fixed speed.
 
   Scrolling used to advance a fixed number of pixels per frame, so it ran at
-  whatever pace the refresh rate happened to give it. It is 60 pixels a second
-  now, measured against the clock, so `display.refresh` can be set to anything
-  without the stations reading at a different speed.
+  whatever pace the refresh rate happened to give it. It is now its own
+  setting, `display.scroll_speed`, in pixels a second and measured against the
+  clock, so the two can be changed without disturbing each other.
 
 - The board is laid out like a real platform indicator.
 

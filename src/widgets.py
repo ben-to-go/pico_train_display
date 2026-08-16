@@ -35,11 +35,10 @@ _ELLIPSIS = '..'
 # Gap between the columns of a departure row.
 _COLUMN_GAP = 4
 
-# How fast the calling points move, in pixels a second, and the blank run
-# between the end of the text and the start of it coming round again. A speed
-# rather than a step per frame, so the refresh rate can change without the
+# The blank run between the end of the calling points and the start of them
+# coming round again. How fast they move is display.scroll_speed, in pixels a
+# second rather than per frame, so the refresh rate can change without the
 # stations suddenly reading at a different pace.
-_SCROLL_PIXELS_PER_SECOND = 60
 _SCROLL_GAP = 24
 
 # How long each of the later departures gets on the third line.
@@ -169,11 +168,16 @@ class ScrollingTextWidget(Widget):
   """
 
   def __init__(
-      self, screen: display.Display, font: fonts.Font, label: str = ''
+      self,
+      screen: display.Display,
+      font: fonts.Font,
+      label: str = '',
+      pixels_per_second: int = 60,
   ):
     super().__init__(screen)
     self._font = font
     self._label = label
+    self._pixels_per_second = pixels_per_second
     self._label_width = font.calculate_bounds(label)[0] if label else 0
     self._text = ''
     self._offsets = [0]  # cumulative pixel width before each character
@@ -237,7 +241,7 @@ class ScrollingTextWidget(Widget):
     now = time.ticks_ms()
     if self._scrolled_at is not None:
       elapsed = time.ticks_diff(now, self._scrolled_at)
-      self._scroll += _SCROLL_PIXELS_PER_SECOND * elapsed / 1000
+      self._scroll += self._pixels_per_second * elapsed / 1000
     self._scrolled_at = now
 
     if self._scroll > width + _SCROLL_GAP:
@@ -373,6 +377,7 @@ class MainWidget(Widget):
       font: fonts.Font,
       clock_font: fonts.Font,
       render_seconds: bool = True,
+      scroll_speed: int = 60,
   ):
     super().__init__(screen)
     self._departure_updater = departure_updater
@@ -381,7 +386,9 @@ class MainWidget(Widget):
     # and leaves two for descenders; the clock, having none, fills all nine.
     self._clock_widget = ClockWidget(screen, clock_font, render_seconds)
     self._no_departures_widget = NoDeparturesWidget(screen, font)
-    self._calling_at_widget = ScrollingTextWidget(screen, font, _CALLING_AT)
+    self._calling_at_widget = ScrollingTextWidget(
+        screen, font, _CALLING_AT, scroll_speed
+    )
     self._first_widget = DepartureWidget(screen, font, screen.width)
     self._later_widget = DepartureWidget(screen, font, screen.width)
 

@@ -130,6 +130,7 @@ def _render_thread(
         fonts.CLOCK_FONT,
         # Don't render seconds on e-paper displays.
         render_seconds=(config.display.type != 'epd29b'),
+        scroll_speed=config.display.scroll_speed,
     )
     non_active = widgets.MessageWidget(
         screen, _DISPLAY_NOT_ACTIVE, fonts.DEFAULT_FONT
