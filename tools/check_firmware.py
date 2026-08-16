@@ -28,8 +28,7 @@ Nothing here needs a device. It reads the .uf2 the build produced, and the
                        flashing eats the saved config
   will it run          static RAM has to leave room for MicroPython's heap
 
-  tools/check_firmware.py firmware.uf2 --board RPI_PICO_W \\
-      --filesystem-bytes 868352 --elf firmware.elf
+  tools/check_firmware.py firmware.uf2 --board RPI_PICO_W --elf firmware.elf
 """
 
 import argparse
