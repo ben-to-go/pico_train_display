@@ -1,6 +1,6 @@
 # Build one yourself
 
-Two parts, fourteen jumper wires, no soldering. About twenty minutes.
+Two parts, fifteen jumper wires, no soldering. About twenty minutes.
 
 ## What to buy
 
@@ -8,7 +8,7 @@ Two parts, fourteen jumper wires, no soldering. About twenty minutes.
 |---|---|
 | **Raspberry Pi Pico 2 WH** | the **W** is the wifi, the **H** is the headers already soldered on |
 | **3.12" 256x64 SSD1322 OLED**, 16 pin | the size and controller the firmware is written for. Sold by Wanjorlay among others |
-| **14 female-to-female jumper wires** | both boards have male pins, so both ends need sockets |
+| **15 female-to-female jumper wires** | both boards have male pins, so both ends need sockets |
 | a micro-USB cable and a USB power supply | any phone charger |
 
 ## Why 8080 parallel
@@ -26,28 +26,37 @@ links are moved.
 
 ## Wiring
 
-Twelve signals, plus power. The twelve signals are all on the left edge of the
-Pico, pins 1 to 15, so they stay tidy; power comes off the other side.
+Twelve signals and three wires to power. The signals all land on the left edge
+of the Pico, pins 1 to 15, so they stay tidy; the power comes off the other
+side.
 
-| OLED pin | | Pico GP | Pico physical pin |
-|---|---|---|---|
-| 1 | GND | GND | 3 |
-| 2 | VCC | 3V3(OUT) | 36 |
-| 4 | D0 | GP0 | 1 |
-| 5 | D1 | GP1 | 2 |
-| 6 | D2 | GP2 | 4 |
-| 7 | D3 | GP3 | 5 |
-| 8 | D4 | GP4 | 6 |
-| 9 | D5 | GP5 | 7 |
-| 10 | D6 | GP6 | 9 |
-| 11 | D7 | GP7 | 10 |
-| 13 | /WR | GP8 | 11 |
-| 14 | D/C | GP9 | 12 |
-| 15 | /RES | GP10 | 14 |
-| 16 | /CS | GP11 | 15 |
+| OLED pin | | Pico pin | | what it does |
+|---|---|---|---|---|
+| 1 | VSS | 38 | GND | ground |
+| 2 | VDD | 36 | 3V3(OUT) | 3.3V power |
+| 3 | NC | — | — | leave unconnected |
+| 4 | D0 | 1 | GP0 | data bit 0 |
+| 5 | D1 | 2 | GP1 | data bit 1 |
+| 6 | D2 | 4 | GP2 | data bit 2 |
+| 7 | D3 | 5 | GP3 | data bit 3 |
+| 8 | D4 | 6 | GP4 | data bit 4 |
+| 9 | D5 | 7 | GP5 | data bit 5 |
+| 10 | D6 | 9 | GP6 | data bit 6 |
+| 11 | D7 | 10 | GP7 | data bit 7 |
+| 12 | E / RD# | 36 | 3V3(OUT) | read strobe, held high because we only write |
+| 13 | R/W# / WR# | 11 | GP8 | write strobe: the panel takes a byte on its rising edge |
+| 14 | D/C# | 12 | GP9 | is this byte a command or pixels |
+| 15 | RES# | 14 | GP10 | hardware reset, pulsed once at startup |
+| 16 | CS# | 15 | GP11 | chip select, low while we are talking |
 
-Pin 3 is not connected and pin 12 is `/RD`, which the firmware never uses.
-Leave both alone unless nothing appears, in which case see below.
+`RD#` matters more than it looks. The firmware never reads from the panel, but
+if that line is left floating the panel can drive the data bus at the same
+time as the Pico, which shows up as a picture that is nearly right rather than
+as nothing at all. Some modules pull it up on board; wiring it is the way to
+not have to find out.
+
+Two wires therefore want 3V3, and the Pico has one 3V3(OUT) pin. A breadboard
+or a two-into-one lead solves it.
 
 Two things to check before powering up:
 
@@ -91,9 +100,8 @@ flash the firmware again.
 - **Blank panel.** Check 3V3 and GND first, then that all eight data lines are
   in GP0 to GP7 order. One swapped data wire gives noise, not nothing; nothing
   usually means power, `/CS` or `/RES`.
-- **Noise or a partial picture.** Try tying OLED pin 12 (`/RD`) to 3V3. Most
-  modules pull it up on board, but not all, and a floating `/RD` lets the
-  panel fight the Pico for the bus.
+- **Noise or a partial picture.** Check pin 12 (`RD#`) really is at 3V3. A
+  floating one lets the panel fight the Pico for the data bus.
 - **Wifi name never appears.** The panel is working if you see anything at
   all, so the problem is later: plug into a computer and read the log with
   `mpremote connect auto`.
