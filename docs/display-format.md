@@ -6,7 +6,9 @@ and what this display does with them.
 ![the board](images/platform_indicator.png)
 
 *A real Chiltern Railways morning from Stoke Mandeville, as the API returned
-it. It is the board baked into the firmware, in `src/fallback.py`.*
+it. It is the board baked into the firmware, in `src/fallback.py`. The amber
+is `#FF9900`: hue 35 degrees, the dominant hue of the lit pixels in the
+photograph below.*
 
 ## The reference
 
