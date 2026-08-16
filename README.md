@@ -27,6 +27,28 @@ How that was measured, and what it means for the fonts, is in
 wifi, the clock or the API give out is in
 [docs/fallback.md](docs/fallback.md).
 
+## What you get
+
+- **The real layout**, not a dashboard that happens to show trains. Four rows
+  of nine pixels, measured off a photograph of a National Rail indicator, in
+  the amber the panel actually glows.
+- **Live departures** for any station and destination, with the stations the
+  next train calls at scrolling along the middle row and the one after it
+  rotating below.
+- **Set up from a phone.** On first boot the board serves its own page over
+  its own wifi, so the station, your network and the API token are typed in
+  rather than compiled in. Nothing is baked into the firmware you download.
+- **It keeps working when things do not.** A real weekday morning is baked in
+  and shown if the API cannot be reached, so the board has departures on it
+  either way. One pixel in the corner is the only sign the data is not
+  current.
+- **It sleeps out of hours**, if you give it a window, and wakes itself up.
+- **No soldering, no 3D printing.** Two boards and fifteen jumper wires
+  between them.
+- **Firmware you can download**, or build in ten seconds if you would rather
+  change it, with a simulator that draws the panel in your terminal so you do
+  not need the hardware to work on the display.
+
 ## Introduction
 
 The goal of this project is to display a live departure board for a station,
@@ -99,6 +121,15 @@ run, and there is no second copy of it to keep in step.
 takes a few minutes, a rebuild after changing `src/` takes about ten seconds.
 
 ## Credits
+
+This is a fork. [Tom Ward](https://github.com/tomwardio) wrote
+[pico_train_display](https://github.com/tomwardio/pico_train_display), which is
+everything this stands on: the driver, the widgets, the setup portal, the
+layout, and the idea of putting a departure board on a two pound
+microcontroller. Thank you for building it, and for the licence that let this
+exist.
+
+The thanks that follow are his.
 
 Firstly, a massive thank you to [Dave Ingram](https://github.com/dingram) for
 inspiring me to work on this project in the first place, and helping me with the
