@@ -84,13 +84,18 @@ your terminal.
 |---|---|
 | `make sim` | the panel, in this terminal |
 | `make test` | the unit tests, exactly as CI runs them |
+| `make firmware` | the uf2, into `build/`. `BOARD=RPI_PICO_W` for the other one |
+| `make firmware-depend` | the cross toolchain, from nothing |
 | `make sim-depend` | everything the simulator needs, from nothing |
-| `make act-depend` | [act](https://nektosact.com) into `bin/`; checks for Docker, never installs it |
-| `make act` | run the build workflow locally, both boards' uf2 into `artifacts/` |
 | `make unix-port` | rebuild just the MicroPython the simulator runs on |
 
-The firmware is built by [`.github/workflows/build.yml`](.github/workflows/build.yml),
-and `make act` runs that same workflow, so there is no second copy of the build.
+[`.github/workflows/build.yml`](.github/workflows/build.yml) runs `make test`
+and `make firmware`, and nothing else. So the build CI does is the build you
+run, and there is no second copy of it to keep in step.
+
+`make firmware` is incremental: it builds from a MicroPython checkout at
+`~/micropython`, which it clones once and then leaves alone. A first build
+takes a few minutes, a rebuild after changing `src/` takes about ten seconds.
 
 ## Credits
 
