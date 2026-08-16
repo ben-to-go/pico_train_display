@@ -1,0 +1,211 @@
+#!/usr/bin/env python3
+# Copyright (c) 2023 Tom Ward
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of
+# this software and associated documentation files (the "Software"), to deal in
+# the Software without restriction, including without limitation the rights to
+# use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+# the Software, and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+# FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+# COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+# IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+# CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+"""Checks a built firmware against the board it is meant for.
+
+Nothing here needs a device. It reads the .uf2 the build produced, and the
+.elf beside it, and answers three questions a unit test cannot:
+
+  will it flash        the UF2 family has to match, or the bootloader ignores
+                       the file and the board looks broken
+  will it fit          the firmware must end before the filesystem does, or
+                       flashing eats the saved config
+  will it run          static RAM has to leave room for MicroPython's heap
+
+  tools/check_firmware.py firmware.uf2 --board RPI_PICO_W \\
+      --filesystem-bytes 868352 --elf firmware.elf
+"""
+
+import argparse
+import collections
+import struct
+import sys
+
+_UF2_MAGIC = (0x0A324655, 0x9E5D5157)
+_UF2_BLOCK = 512
+_NOT_MAIN_FLASH = 0x00001000
+
+_FLASH_BASE = 0x10000000
+_SRAM_BASE = 0x20000000
+_SRAM_END = 0x20080000
+
+# Properties of the hardware, not of the build.
+_BOARDS = {
+    'RPI_PICO_W': {
+        'family': 0xE48BFF56,  # rp2040
+        'flash': 2 * 1024 * 1024,
+        'ram': 264 * 1024,
+    },
+    'RPI_PICO2_W': {
+        'family': 0xE48BFF59,  # rp2350, Arm secure
+        'flash': 4 * 1024 * 1024,
+        'ram': 520 * 1024,
+    },
+}
+
+# The firmware is useless without these, and a manifest mistake is quiet.
+_EXPECTED_FROZEN = ('main', 'trains', 'widgets', 'fallback', 'ssd1322')
+
+# MicroPython needs somewhere to put objects. Well under what either board
+# has, but enough to catch a static buffer that swallows the heap.
+_MIN_FREE_RAM = 64 * 1024
+
+
+class Failure(Exception):
+  """A check that did not pass."""
+
+
+def read_uf2(path):
+  """Returns {family: (lowest address, highest address, block count)}."""
+  with open(path, 'rb') as f:
+    data = f.read()
+  if len(data) % _UF2_BLOCK:
+    raise Failure('{} is not a whole number of UF2 blocks'.format(path))
+
+  extents = collections.defaultdict(lambda: [None, 0, 0])
+  for offset in range(0, len(data), _UF2_BLOCK):
+    block = data[offset : offset + 32]
+    magic0, magic1, flags, address, payload, _, _, family = struct.unpack(
+        '<8I', block
+    )
+    if (magic0, magic1) != _UF2_MAGIC:
+      raise Failure('bad UF2 magic at block {}'.format(offset // _UF2_BLOCK))
+    if flags & _NOT_MAIN_FLASH:
+      continue
+    extent = extents[family]
+    extent[0] = address if extent[0] is None else min(extent[0], address)
+    extent[1] = max(extent[1], address + payload)
+    extent[2] += 1
+  return {family: tuple(e) for family, e in extents.items()}, data
+
+
+def static_ram(path):
+  """Bytes of SRAM the linker has already spoken for."""
+  with open(path, 'rb') as f:
+    elf = f.read()
+  if elf[:4] != b'\x7fELF':
+    raise Failure('{} is not an ELF file'.format(path))
+
+  section_offset, = struct.unpack_from('<I', elf, 0x20)
+  section_size, = struct.unpack_from('<H', elf, 0x2E)
+  section_count, = struct.unpack_from('<H', elf, 0x30)
+
+  total = 0
+  for i in range(section_count):
+    # ELF32 section header: flags at 0x08, addr at 0x0C, size at 0x14.
+    header = section_offset + i * section_size
+    sh_flags, sh_addr = struct.unpack_from('<II', elf, header + 0x08)
+    sh_size, = struct.unpack_from('<I', elf, header + 0x14)
+    if sh_flags & 0x2 and _SRAM_BASE <= sh_addr < _SRAM_END:  # SHF_ALLOC
+      total += sh_size
+  return total
+
+
+def check(uf2_path, board_name, filesystem_bytes, elf_path):
+  board = _BOARDS[board_name]
+  extents, raw = read_uf2(uf2_path)
+  failures = []
+
+  print('{} for {}'.format(uf2_path, board_name))
+
+  # Will it flash?
+  if board['family'] not in extents:
+    failures.append(
+        'no blocks for family 0x{:08x}; found {}'.format(
+            board['family'],
+            ', '.join('0x{:08x}'.format(f) for f in sorted(extents)),
+        )
+    )
+  else:
+    low, high, blocks = extents[board['family']]
+    print(
+        '  family      0x{:08x}, {} blocks, {} .. {}'.format(
+            board['family'], blocks, hex(low), hex(high)
+        )
+    )
+
+  # Will it fit?
+  if board['family'] in extents:
+    _, high, _ = extents[board['family']]
+    size = high - _FLASH_BASE
+    filesystem_start = board['flash'] - filesystem_bytes
+    headroom = filesystem_start - size
+    print(
+        '  flash       {:,} bytes of {:,}, filesystem starts at {:,},'
+        ' headroom {:,}'.format(size, board['flash'], filesystem_start, headroom)
+    )
+    if headroom < 0:
+      failures.append(
+          'firmware runs {:,} bytes into the filesystem'.format(-headroom)
+      )
+
+  # Will it run?
+  if elf_path:
+    used = static_ram(elf_path)
+    free = board['ram'] - used
+    print(
+        '  ram         {:,} bytes static of {:,}, {:,} left for the'
+        ' heap'.format(used, board['ram'], free)
+    )
+    if free < _MIN_FREE_RAM:
+      failures.append(
+          'only {:,} bytes left for the heap, want at least {:,}'.format(
+              free, _MIN_FREE_RAM
+          )
+      )
+
+  # Is the application actually in there?
+  missing = [m for m in _EXPECTED_FROZEN if m.encode() not in raw]
+  print(
+      '  frozen      {} of {} expected modules found'.format(
+          len(_EXPECTED_FROZEN) - len(missing), len(_EXPECTED_FROZEN)
+      )
+  )
+  if missing:
+    failures.append('frozen modules missing: {}'.format(', '.join(missing)))
+
+  for failure in failures:
+    print('  FAILED      {}'.format(failure))
+  return not failures
+
+
+def main():
+  parser = argparse.ArgumentParser(description=__doc__)
+  parser.add_argument('uf2')
+  parser.add_argument('--board', required=True, choices=sorted(_BOARDS))
+  parser.add_argument(
+      '--filesystem-bytes',
+      required=True,
+      type=int,
+      help='MICROPY_HW_FLASH_STORAGE_BYTES, as the build defines it',
+  )
+  parser.add_argument('--elf', help='firmware.elf, for the RAM check')
+  args = parser.parse_args()
+
+  try:
+    ok = check(args.uf2, args.board, args.filesystem_bytes, args.elf)
+  except Failure as e:
+    print('  FAILED      {}'.format(e))
+    ok = False
+  print('  {}'.format('OK' if ok else 'NOT OK'))
+  return 0 if ok else 1
+
+
+if __name__ == '__main__':
+  sys.exit(main())

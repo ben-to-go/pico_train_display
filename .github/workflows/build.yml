@@ -1,57 +1,71 @@
 name: Build
 on: [push]
+
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Run tests
+      run: python3 -m unittest discover -s tests
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      # One board failing should not hide the state of the other.
+      fail-fast: false
+      matrix:
+        include:
+        - board: RPI_PICO_W
+          name: pico_w
+        - board: RPI_PICO2_W
+          name: pico2_w
+    env:
+      BUILD: micropython/ports/rp2/build-${{ matrix.board }}
+      FIRMWARE: pico_train_display_${{ matrix.name }}.uf2
     steps:
     - uses: actions/checkout@v4
       with:
         path: main
-    - name: Run tests
-      run: |
-        pushd main
-        python3 -m unittest discover -s tests
-        popd
     - name: Checkout MicroPython
       uses: actions/checkout@v4
-      with: 
+      with:
         repository: micropython/micropython
-        ref: refs/tags/v1.22.1
+        # RP2350, and so the Pico 2 W, needs at least v1.26.
+        ref: refs/tags/v1.28.0
         path: micropython
     - name: Install build tools
       run: |
         sudo apt-get update
         sudo apt-get install -y cmake gcc-arm-none-eabi \
-          libnewlib-arm-none-eabi build-essential
-    - name: Build Cross-compiler
-      run: |
-        pushd micropython
-        make -C mpy-cross
-        popd
+          libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib \
+          build-essential
+    - name: Build cross-compiler
+      run: make -C micropython/mpy-cross
     - name: Get MicroPython submodules
+      run: make -C micropython/ports/rp2 BOARD=${{ matrix.board }} submodules
+    - name: Build MicroPython with manifest
       run: |
-        pushd micropython
-        make -C ports/rp2 BOARD=RPI_PICO_W submodules
-        popd
-    - name: Build MicroPython with manifest.
+        make -j 4 -C micropython/ports/rp2 BOARD=${{ matrix.board }} \
+          FROZEN_MANIFEST=$GITHUB_WORKSPACE/main/manifest.py
+    - name: Check the firmware suits the board
       run: |
-        pushd micropython
-        cd ports/rp2
-        make -j 4 BOARD=RPI_PICO_W FROZEN_MANIFEST=../../../../main/manifest.py
-        popd
-    - name: Rename UF2
-      run: |
-        pushd micropython
-        mv ports/rp2/build-RPI_PICO_W/firmware.uf2 \
-          ports/rp2/build-RPI_PICO_W/pico_train_display.uf2
-        popd
+        filesystem=$(grep -rhom1 'MICROPY_HW_FLASH_STORAGE_BYTES=[0-9]*' \
+          "$BUILD" | head -1 | cut -d= -f2)
+        python3 main/tools/check_firmware.py "$BUILD/firmware.uf2" \
+          --board ${{ matrix.board }} \
+          --filesystem-bytes "$filesystem" \
+          --elf "$BUILD/firmware.elf"
+    - name: Name the firmware after its board
+      run: cp "$BUILD/firmware.uf2" "$FIRMWARE"
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: pico_train_display
-        path: micropython/ports/rp2/build-RPI_PICO_W/pico_train_display.uf2
+        name: pico_train_display_${{ matrix.name }}
+        path: ${{ env.FIRMWARE }}
     - name: Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: micropython/ports/rp2/build-RPI_PICO_W/pico_train_display.uf2
+        files: ${{ env.FIRMWARE }}

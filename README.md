@@ -43,16 +43,19 @@ which was challenging due to its limited RAM, and with an SSD1322-based display.
 
 The easiest way is to install the Pico Train Dispaly software is to download the
 pre-built image from the
-[latest release](http://github.com/tomwardio/pico_train_display/releases/latest).
-To install on a Raspberry Pi Pico:
+[latest release](https://github.com/ben-to-go/pico_train_display/releases/latest).
+Both the Pico W and the Pico 2 W are supported. To install:
 
 1. Press and hold down the BOOTSEL button while you connect the other end of the
    micro-USB cable to your computer. This will put the Raspberry Pi Pico into
    USB mass storage device mode.
-1. Copy the downloaded
-   [`pico_train_display.uf2`](https://github.com/tomwardio/pico_train_display/releases/latest/download/pico_train_display.uf2)
-   file to the mounted device. Once complete, the device should automatically
-   disconnect.
+1. Copy the downloaded file for your board to the mounted device: 
+   [`pico_train_display_pico_w.uf2`](https://github.com/ben-to-go/pico_train_display/releases/latest/download/pico_train_display_pico_w.uf2)
+   for a Pico W, or
+   [`pico_train_display_pico2_w.uf2`](https://github.com/ben-to-go/pico_train_display/releases/latest/download/pico_train_display_pico2_w.uf2)
+   for a Pico 2 W. The two are not interchangeable: each carries a UF2 family
+   the other board's bootloader ignores. Once complete, the device should
+   automatically disconnect.
 1. Connect the Raspberry Pi Pico to a power supply. The display should now show
    a welcome message with details on how to connect to the setup website.
 1. Follow the on-screen instructions. Once the settings are saved, the device
