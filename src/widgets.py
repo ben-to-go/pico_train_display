@@ -18,6 +18,8 @@
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """Collection of UI widgets for rendering to a display."""
 
+import time
+
 import display
 import fonts
 import trains
@@ -33,9 +35,11 @@ _ELLIPSIS = '..'
 # Gap between the columns of a departure row.
 _COLUMN_GAP = 4
 
-# Pixels the calling points move per frame, and the blank run between the end
-# of the text and the start of it coming round again.
-_SCROLL_STEP = 2
+# How fast the calling points move, in pixels a second, and the blank run
+# between the end of the text and the start of it coming round again. A speed
+# rather than a step per frame, so the refresh rate can change without the
+# stations suddenly reading at a different pace.
+_SCROLL_PIXELS_PER_SECOND = 60
 _SCROLL_GAP = 24
 
 # How long each of the later departures gets on the third line.
@@ -174,6 +178,7 @@ class ScrollingTextWidget(Widget):
     self._text = ''
     self._offsets = [0]  # cumulative pixel width before each character
     self._scroll = 0
+    self._scrolled_at = None
     self._needs_clear = False
 
   def set_text(self, text: str) -> None:
@@ -186,6 +191,7 @@ class ScrollingTextWidget(Widget):
       offsets.append(offsets[-1] + self._font.calculate_bounds(char)[0])
     self._offsets = offsets
     self._scroll = 0
+    self._scrolled_at = None
     self._needs_clear = True
 
   def render(self, x: int, y: int, w: int, h: int) -> bool:
@@ -209,23 +215,31 @@ class ScrollingTextWidget(Widget):
       return True
 
     # Find the run of characters visible in the window beside the label.
+    scroll = int(self._scroll)
     start = 0
-    while start < len(self._text) and self._offsets[start + 1] <= self._scroll:
+    while start < len(self._text) and self._offsets[start + 1] <= scroll:
       start += 1
     end = start
-    while end < len(self._text) and self._offsets[end] < self._scroll + window_w:
+    while end < len(self._text) and self._offsets[end] < scroll + window_w:
       end += 1
 
     self._font.render_text(
         self._text[start:end],
         self._screen,
-        window_x + self._offsets[start] - self._scroll,
+        window_x + self._offsets[start] - scroll,
         y,
     )
 
     self._render_label(x, y, h)
 
-    self._scroll += _SCROLL_STEP
+    # Advance by elapsed time, not by one frame, so the stations read at the
+    # same pace whatever the refresh rate is and however long a frame took.
+    now = time.ticks_ms()
+    if self._scrolled_at is not None:
+      elapsed = time.ticks_diff(now, self._scrolled_at)
+      self._scroll += _SCROLL_PIXELS_PER_SECOND * elapsed / 1000
+    self._scrolled_at = now
+
     if self._scroll > width + _SCROLL_GAP:
       # Off the right hand edge of the window, ready to come round again.
       self._scroll = -window_w
