@@ -27,19 +27,12 @@ beside it: [docs/display-format.md](docs/display-format.md).
 
 ## Build one
 
-The Pico comes with its headers already on, the panel has its own, and jumper
-wires go straight between the two, so it is one sitting and no tools you do not
-already own. [docs/build-your-own.md](docs/build-your-own.md) has the parts and
-the wiring.
+Off-the-shelf parts, all of it bought online, running the firmware this repo
+builds and publishes to its
+[releases](https://github.com/ben-to-go/pico_train_display/releases/latest).
 
-Once it is wired up, or if you are updating one that already works: download
-[`pico_train_display_RPI_PICO2_W.uf2`](https://github.com/ben-to-go/pico_train_display/releases/latest/download/pico_train_display_RPI_PICO2_W.uf2)
-from the [latest release](https://github.com/ben-to-go/pico_train_display/releases/latest),
-hold **BOOTSEL** while plugging the Pico into your computer, and drag the file
-onto the drive that appears. It restarts into a setup screen and tells you what
-to do from there, and the guide covers
-[changing the settings](docs/build-your-own.md#changing-the-settings-later)
-afterwards.
+[docs/build-your-own.md](docs/build-your-own.md) has the parts, the wiring, and
+how to put the firmware on it.
 
 ## Development
 
