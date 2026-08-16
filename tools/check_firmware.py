@@ -37,33 +37,56 @@ import collections
 import struct
 import sys
 
+# UF2 is a container of 512 byte blocks, each carrying 256 bytes of payload
+# and the address to write it to. Block layout, magic numbers and flags:
+# https://github.com/microsoft/uf2#file-format
 _UF2_MAGIC = (0x0A324655, 0x9E5D5157)
 _UF2_BLOCK = 512
+# "block should be skipped when writing the device flash", used for metadata.
 _NOT_MAIN_FLASH = 0x00001000
 
+# Flash is memory mapped for execute-in-place at 0x10000000, and SRAM begins
+# at 0x20000000, on both chips.
+# RP2040 datasheet 2.2 (SRAM) and 2.6.3 (XIP):
+# https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf
+# RP2350 datasheet 4.2 and 4.4:
+# https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf
 _FLASH_BASE = 0x10000000
 _SRAM_BASE = 0x20000000
-_SRAM_END = 0x20080000
+_SRAM_END = 0x20080000  # past the largest SRAM either chip has
 
 # Properties of the hardware, not of the build.
+#
+# Family IDs are the registry the bootloader matches against, so a file for
+# the wrong chip is ignored rather than bricking anything:
+# https://github.com/microsoft/uf2/blob/master/utils/uf2families.json
+#
+# Flash is the chip Raspberry Pi fit to the board, and SRAM is the die:
+# https://datasheets.raspberrypi.com/picow/pico-w-datasheet.pdf
+# https://datasheets.raspberrypi.com/picow/pico-2-w-datasheet.pdf
 _BOARDS = {
     'RPI_PICO_W': {
-        'family': 0xE48BFF56,  # rp2040
+        'family': 0xE48BFF56,  # RP2040
         'flash': 2 * 1024 * 1024,
         'ram': 264 * 1024,
     },
     'RPI_PICO2_W': {
-        'family': 0xE48BFF59,  # rp2350, Arm secure
+        'family': 0xE48BFF59,  # RP2350, Arm secure
         'flash': 4 * 1024 * 1024,
         'ram': 520 * 1024,
     },
 }
 
 # The firmware is useless without these, and a manifest mistake is quiet.
+# What gets frozen is manifest.py, via:
+# https://docs.micropython.org/en/latest/reference/manifest.html
 _EXPECTED_FROZEN = ('main', 'trains', 'widgets', 'fallback', 'ssd1322')
 
-# MicroPython needs somewhere to put objects. Well under what either board
-# has, but enough to catch a static buffer that swallows the heap.
+# MicroPython allocates its heap from whatever SRAM the linker did not claim:
+# https://docs.micropython.org/en/latest/reference/constrained.html
+# There is no correct figure, so this is a guard rail rather than a spec. Both
+# boards currently leave several times this much; it is here to catch a static
+# buffer that swallows the heap.
 _MIN_FREE_RAM = 64 * 1024
 
 
@@ -102,17 +125,25 @@ def static_ram(path):
   if elf[:4] != b'\x7fELF':
     raise Failure('{} is not an ELF file'.format(path))
 
+  # ELF32 header: e_shoff at 0x20, e_shentsize at 0x2E, e_shnum at 0x30.
+  # Figure 1-3 and 1-8 of the ELF specification:
+  # https://refspecs.linuxfoundation.org/elf/elf.pdf
   section_offset, = struct.unpack_from('<I', elf, 0x20)
   section_size, = struct.unpack_from('<H', elf, 0x2E)
   section_count, = struct.unpack_from('<H', elf, 0x30)
 
   total = 0
   for i in range(section_count):
-    # ELF32 section header: flags at 0x08, addr at 0x0C, size at 0x14.
+    # Section header: sh_flags at 0x08, sh_addr at 0x0C, sh_size at 0x14.
+    # Note sh_addr and sh_size are not adjacent; sh_offset sits between them.
     header = section_offset + i * section_size
     sh_flags, sh_addr = struct.unpack_from('<II', elf, header + 0x08)
     sh_size, = struct.unpack_from('<I', elf, header + 0x14)
-    if sh_flags & 0x2 and _SRAM_BASE <= sh_addr < _SRAM_END:  # SHF_ALLOC
+    # SHF_ALLOC, meaning the section occupies memory at run time. Counting
+    # every such section in SRAM catches the vector table, .data, .bss, the
+    # heap placeholder and the scratch banks, which is more than
+    # arm-none-eabi-size reports as data + bss.
+    if sh_flags & 0x2 and _SRAM_BASE <= sh_addr < _SRAM_END:
       total += sh_size
   return total
 

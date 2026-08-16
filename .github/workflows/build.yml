@@ -1,5 +1,8 @@
 name: Build
-on: [push]
+on:
+  push:
+  # Lets a build be started by hand, from the Actions tab or `gh workflow run`.
+  workflow_dispatch:
 
 jobs:
   test:
@@ -12,6 +15,10 @@ jobs:
   build:
     needs: test
     runs-on: ubuntu-latest
+    # The default token is read-only, which is not enough to attach the
+    # firmware to a release.
+    permissions:
+      contents: write
     strategy:
       # One board failing should not hide the state of the other.
       fail-fast: false
@@ -22,8 +29,10 @@ jobs:
         - board: RPI_PICO2_W
           name: pico2_w
     env:
-      BUILD: micropython/ports/rp2/build-${{ matrix.board }}
-      FIRMWARE: pico_train_display_${{ matrix.name }}.uf2
+      # Prefixed because make takes variables from the environment, and BUILD
+      # is the one MicroPython's own Makefiles use for their output directory.
+      PTD_BUILD: micropython/ports/rp2/build-${{ matrix.board }}
+      PTD_FIRMWARE: pico_train_display_${{ matrix.name }}.uf2
     steps:
     - uses: actions/checkout@v4
       with:
@@ -32,7 +41,9 @@ jobs:
       uses: actions/checkout@v4
       with:
         repository: micropython/micropython
-        # RP2350, and so the Pico 2 W, needs at least v1.26.
+        # Pinned so a given tag of this project always produces the same
+        # firmware. v1.28.0 is the current release; RP2350, and so the Pico 2
+        # W, needs at least v1.26. Bump deliberately.
         ref: refs/tags/v1.28.0
         path: micropython
     - name: Install build tools
@@ -52,20 +63,20 @@ jobs:
     - name: Check the firmware suits the board
       run: |
         filesystem=$(grep -rhom1 'MICROPY_HW_FLASH_STORAGE_BYTES=[0-9]*' \
-          "$BUILD" | head -1 | cut -d= -f2)
-        python3 main/tools/check_firmware.py "$BUILD/firmware.uf2" \
+          "$PTD_BUILD" | head -1 | cut -d= -f2)
+        python3 main/tools/check_firmware.py "$PTD_BUILD/firmware.uf2" \
           --board ${{ matrix.board }} \
           --filesystem-bytes "$filesystem" \
-          --elf "$BUILD/firmware.elf"
+          --elf "$PTD_BUILD/firmware.elf"
     - name: Name the firmware after its board
-      run: cp "$BUILD/firmware.uf2" "$FIRMWARE"
+      run: cp "$PTD_BUILD/firmware.uf2" "$PTD_FIRMWARE"
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
         name: pico_train_display_${{ matrix.name }}
-        path: ${{ env.FIRMWARE }}
+        path: ${{ env.PTD_FIRMWARE }}
     - name: Release
       uses: softprops/action-gh-release@v2
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: ${{ env.FIRMWARE }}
+        files: ${{ env.PTD_FIRMWARE }}
