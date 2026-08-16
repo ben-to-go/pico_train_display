@@ -68,11 +68,15 @@ class SSD1322(display.Display):
     self.write_cmd(0xC1, 0x7F)        # Set contrast current (default)
     self.write_cmd(0xC7, 0x0F)        # Master contrast (reset)
     self.write_cmd(0xB9)              # Set default greyscale table
-    self.write_cmd(0xB1, 0xF0)        # Phase length
+    # The three analog settings below are the values this panel was brought up
+    # with on the bench, not the ones this project used over SPI, which were
+    # never run against it. A VcomH of 0x00 in particular is low enough that a
+    # correctly initialised panel can still show nothing at all.
+    self.write_cmd(0xB1, 0xE2)        # Phase length
     self.write_cmd(0xD1, 0x82, 0x20)  # Display enhancement B (reset)
-    self.write_cmd(0xBB, 0x0D)        # Pre-charge voltage
+    self.write_cmd(0xBB, 0x1F)        # Pre-charge voltage
     self.write_cmd(0xB6, 0x08)        # 2nd precharge period
-    self.write_cmd(0xBE, 0x00)        # Set VcomH
+    self.write_cmd(0xBE, 0x07)        # Set VcomH
     self.write_cmd(0xA6)              # Normal display (reset)
     self.write_cmd(0xA9)              # Exit partial display
     self.write_cmd(0xAF)              # Display on
