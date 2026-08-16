@@ -292,13 +292,18 @@ async def _setup_access_point():
   ap.active(True)
   logging.log('Creating AP wifi with SSID: {}', _SETUP_WIFI_SSID)
 
+  # active() is the radio being up, which is all the portal needs. On an
+  # access point isconnected() means a station has joined, and waiting for
+  # that before showing the instructions that say which network to join is a
+  # deadlock: nobody joins, this raises, and the board resets, having shown a
+  # blank screen the whole time.
   for _ in range(_CONNECT_TIMEOUT):
-    if ap.isconnected():
+    if ap.active():
       return ap
     await asyncio.sleep(1)
 
   raise OSError(
-      'Failed to setup wifi access point in {} secs'.format(_CONNECT_TIMEOUT)
+      'Failed to bring up access point in {} secs'.format(_CONNECT_TIMEOUT)
   )
 
 
