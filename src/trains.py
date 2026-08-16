@@ -70,28 +70,27 @@ class RateLimitError(ValueError):
 # Long enough that a night-long outage costs a handful of requests, short
 # enough that the board is current again within half an hour of the API
 # coming back.
-_MAX_BACKOFF_SECS = 30 * 60
+# How long to wait after a failure, then after a second one in a row, and so
+# on. A blip deserves another go almost straight away; something still broken
+# after five minutes does not deserve asking every two.
+_BACKOFF_SECS = (1, 5, 30, 120, 600, 1800)
 
 
 def retry_wait(error, failures_in_a_row: int, interval: int) -> int:
-  """How long to leave it after a failed update.
+  """How long to leave it after a failed update. Failures count from one.
 
-  A 429 answers this question itself: the API sends the seconds to wait, and
-  they are minutes rather than seconds, so it is used as given.
+  A 429 answers the question itself: the API sends the seconds to wait, and
+  never less than the interval we would have waited anyway.
 
-  Everything else doubles the interval for each failure in a row. That matters
-  more than it looks. Retrying harder is the obvious response to a failure and
-  the wrong one here, because the request budget is small enough that a few
-  retries a cycle can spend it all, leaving nothing for the recovery. Backing
-  off means an outage costs fewer requests than normal running, not more.
+  Anything else is treated as a blip until it proves otherwise. The first
+  retries come quickly, and if it keeps failing they stretch out, because the
+  request budget is small and it is the recovery that needs it.
   """
-  if isinstance(error, RateLimitError) and error.retry_after > 0:
+  if isinstance(error, RateLimitError):
     return max(interval, error.retry_after)
 
-  # One failure waits the usual interval, two waits double, and so on. The
-  # shift is capped before the multiply so the arithmetic cannot run away.
-  doublings = min(max(failures_in_a_row - 1, 0), 10)
-  return min(interval * (1 << doublings), _MAX_BACKOFF_SECS)
+  step = min(failures_in_a_row, len(_BACKOFF_SECS))
+  return _BACKOFF_SECS[step - 1]
 
 
 def _to_hhmm(timestamp: str) -> int:
