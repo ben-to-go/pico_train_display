@@ -1,9 +1,9 @@
-"""Emulator for an SSD1322 panel, driven by the real SPI command stream.
+"""Emulator for an SSD1322 panel, driven by the real command stream.
 
 The firmware's `ssd1322.py` driver runs completely unmodified: the fake
-`machine.SPI` forwards every byte it would put on the wire to `Panel.write()`,
-which decodes the SSD1322 command set and reconstructs the picture the physical
-panel would be showing.
+`parallel8080` bus forwards every byte it would put on the wire to
+`Panel.write()`, which decodes the SSD1322 command set and reconstructs the
+picture the physical panel would be showing.
 """
 
 import sys

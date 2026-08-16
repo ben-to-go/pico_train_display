@@ -87,7 +87,9 @@ _BOARDS = {
 # module that merely gets mentioned somewhere does not count as present.
 # What gets frozen is manifest.py, via:
 # https://docs.micropython.org/en/latest/reference/manifest.html
-_EXPECTED_FROZEN = ('main', 'trains', 'widgets', 'fallback', 'ssd1322')
+_EXPECTED_FROZEN = (
+    'main', 'trains', 'widgets', 'fallback', 'ssd1322', 'parallel8080'
+)
 
 # MicroPython allocates its heap from whatever SRAM the linker did not claim:
 # https://docs.micropython.org/en/latest/reference/constrained.html

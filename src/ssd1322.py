@@ -21,35 +21,25 @@
 Datasheet: https://www.hpinfotech.ro/SSD1322.pdf
 """
 
-import time
-
 import framebuf
-import machine
 
 import display
 
 
 class SSD1322(display.Display):
-  """SSD1322 SPI-4 display driver."""
+  """SSD1322 driver, talking to the panel over an 8080 8-bit parallel bus."""
 
   def __init__(
       self,
-      spi: machine.SPI,
-      cs: machine.Pin,
-      dc: machine.Pin,
-      rst: machine.Pin,
+      bus,
       width: int = 256,
       height: int = 64,
       flip_display: bool = False,
   ):
-    self.spi = spi
-    self.cs = cs
-    self.dc = dc
-    self.rst = rst
-
-    self.cs.init(self.cs.OUT, value=1)
-    self.dc.init(self.dc.OUT, value=0)
-    self.rst.init(self.rst.OUT, value=1)
+    self._bus = bus
+    # Commands go out one byte at a time, often enough that allocating a
+    # buffer for each would be churn the collector does not need.
+    self._cmd = bytearray(1)
 
     self._width = width
     self._height = height
@@ -61,7 +51,7 @@ class SSD1322(display.Display):
     self._init_display(flip_display)
 
   def _init_display(self, flip_display: bool):
-    self._reset()
+    self._bus.reset()
 
     # fmt: off
     self.write_cmd(0xFD, 0x12)        # Unlock IC
@@ -78,11 +68,15 @@ class SSD1322(display.Display):
     self.write_cmd(0xC1, 0x7F)        # Set contrast current (default)
     self.write_cmd(0xC7, 0x0F)        # Master contrast (reset)
     self.write_cmd(0xB9)              # Set default greyscale table
-    self.write_cmd(0xB1, 0xF0)        # Phase length
+    # The three analog settings below are the values this panel was brought up
+    # with on the bench, not the ones this project used over SPI, which were
+    # never run against it. A VcomH of 0x00 in particular is low enough that a
+    # correctly initialised panel can still show nothing at all.
+    self.write_cmd(0xB1, 0xE2)        # Phase length
     self.write_cmd(0xD1, 0x82, 0x20)  # Display enhancement B (reset)
-    self.write_cmd(0xBB, 0x0D)        # Pre-charge voltage
+    self.write_cmd(0xBB, 0x1F)        # Pre-charge voltage
     self.write_cmd(0xB6, 0x08)        # 2nd precharge period
-    self.write_cmd(0xBE, 0x00)        # Set VcomH
+    self.write_cmd(0xBE, 0x07)        # Set VcomH
     self.write_cmd(0xA6)              # Normal display (reset)
     self.write_cmd(0xA9)              # Exit partial display
     self.write_cmd(0xAF)              # Display on
@@ -90,12 +84,6 @@ class SSD1322(display.Display):
 
     self.fill(0)
     self.flush()
-
-  def _reset(self):
-    self.rst(0)
-    time.sleep_ms(50)
-    self.rst(1)
-    time.sleep_ms(100)
 
   @property
   def width(self) -> int:
@@ -119,19 +107,14 @@ class SSD1322(display.Display):
     self.write_cmd(0xAF)
 
   def write_cmd(self, cmd, *args):
-    self.dc(0)
-    self.cs(0)
-    self.spi.write(bytearray([cmd]))
-    self.cs(1)
+    self._cmd[0] = cmd
+    self._bus.write(self._cmd, 0)
 
     if len(args) > 0:
       self.write_data(bytearray(args))
 
   def write_data(self, data):
-    self.dc(1)
-    self.cs(0)
-    self.spi.write(data)
-    self.cs(1)
+    self._bus.write(data, 1)
 
   def flush(self):
     offset = (480 - self._width) // 2

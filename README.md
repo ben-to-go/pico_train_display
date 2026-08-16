@@ -3,7 +3,8 @@
 A MicroPython-based application for displaying near-realtime UK railway
 departure times. It is designed to run on a
 [Raspberry Pi Pico W](https://www.raspberrypi.com/products/raspberry-pi-pico/)
-microcontroller, with an SSD1322-based 256x64 SPI OLED display.
+microcontroller, with an SSD1322-based 256x64 OLED display, driven over its
+8080 8-bit parallel interface.
 
 This project uses the
 [Realtime Trains API](https://api-portal.rtt.io/) as its data source,
