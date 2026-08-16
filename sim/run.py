@@ -13,8 +13,7 @@ main.py:
 Two things still need doing from out here: the firmware's log would scribble
 over the panel, and the setup portal asks for port 80, which needs root.
 
-  sim/run.sh              the display, at its real 256x64
-  sim/run.sh --compact    braille cells, for terminals narrower than 256
+  sim/run.sh    the display, at its real 256x64
 """
 
 import sys

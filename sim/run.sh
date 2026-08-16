@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Runs the firmware on the desktop, under the MicroPython unix port.
 #
-#   sim/run.sh              draw the panel in the terminal (Ctrl-C to stop)
-#   sim/run.sh --compact    braille output, for narrower terminals
+#   sim/run.sh    draw the panel in the terminal (Ctrl-C to stop)
 #
 # Uses the project's config.json and the real Realtime Trains API, exactly as
 # the device does. With no config.json it serves the setup portal on
@@ -28,4 +27,4 @@ export TZ=UTC
 # Somewhere to keep the API token out of config.json while developing.
 if [[ -f .env ]]; then set -a; . ./.env; set +a; fi
 
-exec "$MICROPYTHON" sim/run.py "$@"
+exec "$MICROPYTHON" sim/run.py

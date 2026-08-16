@@ -45,15 +45,14 @@ not be committed.
 ## Running
 
 ```sh
-make sim                # the panel, at its real 256x64
-make sim-compact        # braille cells, for terminals narrower than 256
+make sim
 ```
 
 Or `sim/run.sh` directly, which is all the Makefile does.
 
-The default view is one terminal cell per 1x2 pixels, so the panel appears at
-its true width and wants a 256 column terminal. With no `config.json` you get
-the setup portal on http://127.0.0.1:8088, exactly as the device serves it.
+One terminal cell is 1x2 pixels, so the panel appears at its true width and
+wants a terminal 256 columns wide. With no `config.json` you get the setup
+portal on http://127.0.0.1:8088, exactly as the device serves it.
 
 ## None of this reaches the device
 

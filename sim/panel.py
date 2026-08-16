@@ -12,9 +12,6 @@ import time
 # Redrawing faster than this shows a terminal nothing it can keep up with.
 _MIN_REDRAW_MS = 60
 
-# Braille cells, for terminals narrower than the panel.
-_COMPACT = '--compact' in sys.argv
-
 # Nibble-per-pixel greyscale value -> 8-bit sample.
 _GREY = bytes(min(255, v * 17) for v in range(16))
 
@@ -166,22 +163,14 @@ class Panel:
         and time.ticks_diff(now, self._drawn_at) < _MIN_REDRAW_MS):
       return
     self._drawn_at = now
-    sys.stdout.write('\x1b[H' + self.to_ansi(_COMPACT) + '\x1b[K\n')
-
-  def to_ansi(self, compact: bool = False) -> str:
-    """Renders the panel as text.
-
-    Default is one terminal cell per 1x2 pixels (256 columns x 32 rows), which
-    is a 1:1 horizontal reproduction of the panel. `compact` uses braille cells
-    of 2x4 pixels instead (128 columns x 16 rows) for narrower terminals.
-    """
-    return self._to_braille() if compact else self._to_halfblock()
+    sys.stdout.write('\x1b[H' + self._render() + '\x1b[K\n')
 
   def _amber(self, value: int) -> str:
     # The real panel is a warm amber-on-black OLED.
     return '{};{};{}'.format(value, (value * 3) // 4, 0)
 
-  def _to_halfblock(self) -> str:
+  def _render(self) -> str:
+    """One terminal cell per 1x2 pixels, so 256 columns by 32 rows."""
     src = self._visible()
     w = self.width
     lines = []
@@ -199,27 +188,6 @@ class Panel:
           )
           prev = (top, bot)
         parts.append('▀')
-      parts.append('\x1b[0m')
-      lines.append(''.join(parts))
-    return '\n'.join(lines)
-
-  # Braille dot bit for each (dx, dy) within a 2x4 cell.
-  _DOTS = ((0x01, 0x02, 0x04, 0x40), (0x08, 0x10, 0x20, 0x80))
-
-  def _to_braille(self) -> str:
-    src = self._visible()
-    w = self.width
-    lines = []
-    for y in range(0, self.height, 4):
-      parts = ['\x1b[38;2;{}m'.format(self._amber(255))]
-      for x in range(0, w, 2):
-        bits = 0
-        for dx in range(2):
-          for dy in range(4):
-            px, py = x + dx, y + dy
-            if px < w and py < self.height and src[py * w + px] >= 8:
-              bits |= self._DOTS[dx][dy]
-        parts.append(chr(0x2800 + bits))
       parts.append('\x1b[0m')
       lines.append(''.join(parts))
     return '\n'.join(lines)
