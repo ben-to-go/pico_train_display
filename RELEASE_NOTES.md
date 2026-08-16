@@ -2,13 +2,14 @@
 
 ## Unreleased
 
-- Releases carry firmware for the Pico 2 W as well as the Pico W.
+- The Pico 2 W is the board this runs on, and the only one.
 
-  The two files are not interchangeable, so they are named after their board.
-  Each build is checked before it is published: that the UF2 family matches
-  the board, that the firmware ends before the filesystem does, that static
-  RAM leaves room for the heap, and that the application is actually frozen
-  into it.
+  Support for the original Pico W is gone: nobody working on this has one to
+  test against, and shipping firmware nobody can try is worse than shipping
+  none. Each build is still checked before it is published: that the UF2
+  family matches the board, that the firmware ends before the filesystem
+  does, that static RAM leaves room for the heap, and that the application is
+  actually frozen into it.
 
 - Dropped the experimental e-Paper display.
 

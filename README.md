@@ -1,8 +1,8 @@
 # 🚂 Pico train departure display 🚂
 
 A MicroPython-based application for displaying near-realtime UK railway
-departure times. It is designed to run on a
-[Raspberry Pi Pico W](https://www.raspberrypi.com/products/raspberry-pi-pico/)
+departure times. It runs on a
+[Raspberry Pi Pico 2 W](https://www.raspberrypi.com/products/raspberry-pi-pico-2/)
 microcontroller, with an SSD1322-based 256x64 OLED display, driven over its
 8080 8-bit parallel interface.
 
@@ -34,9 +34,10 @@ showing trains departing for a specific destination. It's written entirely in
 Python and should be able to run on any microcontroller that is capable of
 running MicroPython.
 
-It's been extensively tested on a
-[Raspberry Pi Pico W](https://www.raspberrypi.com/products/raspberry-pi-pico/),
-which was challenging due to its limited RAM, and with an SSD1322-based display.
+It runs on a
+[Raspberry Pi Pico 2 W](https://www.raspberrypi.com/products/raspberry-pi-pico-2/)
+and an SSD1322 panel, which is the only combination anyone has to hand to test
+against.
 
 ## Building your own display
 
@@ -51,18 +52,14 @@ two, so it is one sitting and no tools you do not already own.
 The easiest way is to install the Pico Train Dispaly software is to download the
 pre-built image from the
 [latest release](https://github.com/ben-to-go/pico_train_display/releases/latest).
-Both the Pico W and the Pico 2 W are supported. To install:
+To install:
 
 1. Press and hold down the BOOTSEL button while you connect the other end of the
    micro-USB cable to your computer. This will put the Raspberry Pi Pico into
    USB mass storage device mode.
-1. Copy the downloaded file for your board to the mounted device:
-   [`pico_train_display_RPI_PICO_W.uf2`](https://github.com/ben-to-go/pico_train_display/releases/latest/download/pico_train_display_RPI_PICO_W.uf2)
-   for a Pico W, or
+1. Copy
    [`pico_train_display_RPI_PICO2_W.uf2`](https://github.com/ben-to-go/pico_train_display/releases/latest/download/pico_train_display_RPI_PICO2_W.uf2)
-   for a Pico 2 W. The two are not interchangeable: each carries a UF2 family
-   the other board's bootloader ignores. Once complete, the device should
-   automatically disconnect.
+   to the mounted device. Once complete, it should automatically disconnect.
 1. Connect the Raspberry Pi Pico to a power supply. The display should now show
    a welcome message with details on how to connect to the setup website.
 1. Follow the on-screen instructions. Once the settings are saved, the device
@@ -88,7 +85,7 @@ your terminal.
 |---|---|
 | `make sim` | the panel, in this terminal |
 | `make test` | the unit tests, exactly as CI runs them |
-| `make firmware` | the uf2, into `build/`. `BOARD=RPI_PICO_W` for the other one |
+| `make firmware` | the uf2, into `build/` |
 | `make firmware-depend` | the cross toolchain, from nothing |
 | `make sim-depend` | everything the simulator needs, from nothing |
 | `make unix-port` | rebuild just the MicroPython the simulator runs on |

@@ -20,11 +20,6 @@ jobs:
     # firmware to a release.
     permissions:
       contents: write
-    strategy:
-      # One board failing should not hide the state of the other.
-      fail-fast: false
-      matrix:
-        board: [RPI_PICO_W, RPI_PICO2_W]
     steps:
     - uses: actions/checkout@v4
     - name: Install build tools
@@ -32,14 +27,14 @@ jobs:
     - name: Build firmware
       # The Makefile is the one description of how this is built, so the same
       # command here builds the same thing on a laptop, incrementally.
-      run: make firmware BOARD=${{ matrix.board }}
+      run: make firmware
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: pico_train_display_${{ matrix.board }}
-        path: build/pico_train_display_${{ matrix.board }}.uf2
+        name: pico_train_display_RPI_PICO2_W
+        path: build/pico_train_display_RPI_PICO2_W.uf2
     - name: Release
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: build/pico_train_display_${{ matrix.board }}.uf2
+        files: build/pico_train_display_RPI_PICO2_W.uf2
