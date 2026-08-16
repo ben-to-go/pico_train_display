@@ -10,7 +10,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Run tests
-      run: python3 -m unittest discover -s tests
+      # The Makefile is where this lives, so it cannot drift from what you run.
+      run: make test
 
   build:
     needs: test
