@@ -32,7 +32,9 @@ chain from wherever it broke:
 1. **Is wifi up?** `wlan is None or not wlan.isconnected()` → try to join again,
    quietly, without disturbing what is on the panel.
 2. **Is the clock set?** If wifi is up and NTP never answered, try again.
-3. **Fetch departures**, up to `_MAX_ATTEMPTS` (3) times.
+3. **Fetch departures**, up to `_MAX_ATTEMPTS` (3) times, five seconds apart.
+   - A **429** stops the attempts there and waits for as long as the API asked
+     for. See [the rate limit](#the-rate-limit).
    - `ECONNABORTED` mid-request means the connection dropped while still
      associated, which the check in step 1 would not catch, so that one
      reassociates before retrying.
@@ -41,6 +43,29 @@ chain from wherever it broke:
 
 Nothing in here raises. Three failed attempts is not an error, it is a cycle
 where the board carried on showing what it already had.
+
+## The rate limit
+
+The API counts requests per minute, hour, day and week, and this account gets
+**10 a minute and 100 an hour, 1000 a day**. Over any of them it answers 429
+with a `Retry-After` of minutes rather than seconds.
+
+Each update costs one request, plus one more whenever the train at the top of
+the board changes and its calling points have to be fetched, plus a token
+exchange every twenty minutes because the access token only lasts that long.
+So the daily allowance is what really sets the pace:
+
+| `update_interval` | requests an hour | a day | |
+|---|---|---|---|
+| 20s | 186 | 4,464 | over both |
+| 60s | 66 | 1,584 | over the daily |
+| **120s** | **36** | **864** | the default |
+
+Departures do not change fast enough for anything quicker to be worth it.
+
+Two things make a limit worse once you are in it, and neither happens any
+more: retrying immediately, and retrying at all. A 429 breaks out of the
+attempt loop rather than spending the next two requests confirming it.
 
 ## The baked-in board
 

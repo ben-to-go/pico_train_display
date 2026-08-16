@@ -55,6 +55,18 @@ class AuthError(ValueError):
   """
 
 
+class RateLimitError(ValueError):
+  """Raised when the API says we have asked too often.
+
+  Carries the seconds the API asked us to wait, because retrying straight
+  away is how a board that is over the limit stays over it.
+  """
+
+  def __init__(self, retry_after: int):
+    super().__init__('Rate limited, retry after {}s'.format(retry_after))
+    self.retry_after = retry_after
+
+
 def _to_hhmm(timestamp: str) -> int:
   """'2026-08-15T18:30:00' -> 1830."""
   return int(timestamp[11:13] + timestamp[14:16])
@@ -179,7 +191,9 @@ def _http_request(
       else:
         header = str(header, 'utf-8')
         k, v = header.split(':', 1)
-        headers[k] = v.strip()
+        # Lowercased, because header names are case insensitive and the only
+        # thing that reads one wants to find it whatever the server sent.
+        headers[k.lower()] = v.strip()
 
   except Exception:
     # Always close socket on any exception
@@ -313,6 +327,10 @@ def _get_json(url: str, access_token: str, buffer, ssl_context):
   )
   if response.status_code == 401:
     raise AuthError('Token rejected by API.')
+  if response.status_code == 429:
+    # The API tells us how long to wait, and it is generous: minutes, not
+    # seconds. Guessing shorter just spends requests we do not have.
+    raise RateLimitError(int(response.headers.get('retry-after', 0) or 0))
   if response.status_code != 200:
     raise ValueError('API request failed! {}'.format(response.status_code))
   # TODO: JSON decoding allocates a lot of small objects, which can put pressure

@@ -8,7 +8,7 @@
   "rtt": {
     "endpoint": "https://data.rtt.io",
     "token": "",
-    "update_interval": 20
+    "update_interval": 120
   },
   "display": {
     "refresh": 60,

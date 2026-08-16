@@ -54,6 +54,9 @@ _SETUP_MESSAGE = (
 
 _MAX_ATTEMPTS = 3
 _CONNECT_TIMEOUT = 15
+# Seconds between attempts within one update. The API allows ten requests a
+# minute, so three of them inside a second is a way to lose the next nine.
+_RETRY_BACKOFF = 5
 
 gc.collect()
 
@@ -252,29 +255,40 @@ def run(config: config_module.Config):
       if wlan is not None and not clock_set:
         clock_set = _configure_time()
 
+      wait = update_interval
       for attempt in range(1, _MAX_ATTEMPTS + 1):
         try:
           departure_updater.update()
           gc.collect()
           break
+        except trains.RateLimitError as e:
+          # Asking again is the one response guaranteed to make this worse,
+          # and the API has said how long to leave it. Skip the rest of the
+          # attempts and wait it out.
+          logging.log('Rate limited, waiting {}s', e.retry_after)
+          wait = max(update_interval, e.retry_after)
+          break
         except Exception as e:
-          # Anything at all: a dropped connection, a revoked token, an API
-          # that has been retired and now answers with something we can't
-          # parse. The board keeps showing what it has either way, so none of
-          # it is worth resetting the device over.
+          # Anything else: a dropped connection, a revoked token, an API that
+          # has been retired and now answers with something we can't parse.
+          # The board keeps showing what it has either way, so none of it is
+          # worth resetting the device over.
           if isinstance(e, OSError) and e.errno == errno.ECONNABORTED:
             # Aborted mid-request, which can happen while still associated,
             # so the check at the top of the loop would not catch it.
             logging.log('Received ECONNABORTED error, try reconnecting...')
             wlan = _connect(config.wifi.ssid, config.wifi.password)
           logging.log(
-              'Train update attempt {}/{} failed!', attempt, _MAX_ATTEMPTS
+              'Train update attempt {}/{} failed! {}', attempt, _MAX_ATTEMPTS, e
           )
           sys.print_exception(e)
-          # Never give up: the board keeps showing the last departures it has,
-          # with the stale dot in the corner, and we try again next interval.
+          # Spaced out, because three requests in the same second is how a
+          # transient failure turns into a rate limit. Never give up though:
+          # the board keeps showing the departures it has, with the stale dot.
+          if attempt < _MAX_ATTEMPTS:
+            time.sleep(_RETRY_BACKOFF)
 
-      for _ in range(update_interval):
+      for _ in range(wait):
         time.sleep(1)
   finally:
     logging.log('Main thread closing...')
