@@ -83,7 +83,7 @@ your terminal.
 | `make test` | the unit tests, exactly as CI runs them |
 | `make sim-depend` | everything the simulator needs, from nothing |
 | `make act-depend` | [act](https://nektosact.com) into `bin/`; checks for Docker, never installs it |
-| `make act` | run the build workflow locally, firmware into `artifacts/` |
+| `make act` | run the build workflow locally, firmware zipped into `artifacts/` |
 | `make unix-port` | rebuild just the MicroPython the simulator runs on |
 
 The firmware is built by [`.github/workflows/build.yml`](.github/workflows/build.yml),

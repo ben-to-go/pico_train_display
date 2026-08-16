@@ -55,7 +55,8 @@ act-depend:
 		https://raw.githubusercontent.com/nektos/act/$(ACT_VERSION)/install.sh \
 		| bash -s -- -b bin $(ACT_VERSION)
 
-# Runs .github/workflows/build.yml in containers; firmware lands in artifacts/.
+# Runs .github/workflows/build.yml in containers. The firmware lands zipped
+# under artifacts/, the way the runner uploads it.
 # The flags are in .actrc, so running act by hand behaves the same. act ignores
 # job-level permissions, so this says nothing about the tag-gated release step.
 act:
