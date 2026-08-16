@@ -43,7 +43,6 @@ import widgets
 
 _WIFI_CONNECT = 'Connecting'
 _LOADING_DEPARTURES = 'Loading train departures...'
-_DISPLAY_NOT_ACTIVE = 'Outside active hours, going to sleep...'
 
 _SETUP_WIFI_SSID = 'Pico Train Display'
 _SETUP_WIFI_PASSWORD = '12345678'
@@ -122,13 +121,6 @@ def _configure_time() -> bool:
   return False
 
 
-# TODO: Make this an enum when micropython supports such a thing
-class _ScreenState:
-  ENTER_NON_ACTIVE = micropython.const(0)
-  NON_ACTIVE = micropython.const(1)
-  ACTIVE = micropython.const(2)
-
-
 def _render_thread(
     screen: display.Display,
     departure_updater: trains.DepartureUpdater,
@@ -144,52 +136,19 @@ def _render_thread(
         fonts.CLOCK_FONT,
         scroll_speed=config.display.scroll_speed,
     )
-    non_active = widgets.MessageWidget(
-        screen, _DISPLAY_NOT_ACTIVE, fonts.DEFAULT_FONT
-    )
-
-    active_time = config.display.active_time
     refresh_rate_us = int((1 / config.display.refresh) / 1e-6)
     screen.fill(0)
-    state = _ScreenState.ACTIVE
 
     while main_running.locked():
-      now = utils.get_uk_time()
       start = time.ticks_us()
 
-      sleep_time_us = refresh_rate_us
-      if state == _ScreenState.ACTIVE:
-        if active_time is not None and not active_time.in_range(now):
-          state = _ScreenState.ENTER_NON_ACTIVE
-        elif main_display.render(now):
-          gc.collect()
-          screen.flush()
-      elif state == _ScreenState.ENTER_NON_ACTIVE:
-        logging.log(
-            'Detected non-active time {} sleeping...', utils.get_uk_time()
-        )
-        non_active.render()
+      if main_display.render(utils.get_uk_time()):
+        gc.collect()
         screen.flush()
-        time.sleep(3)
-        screen.fill(0)
-        screen.flush()
-        screen.sleep()
-        state = _ScreenState.NON_ACTIVE
-      elif state == _ScreenState.NON_ACTIVE:
-        assert active_time is not None
-        if active_time.in_range(now):
-          logging.log('Awake from non-active time {}', utils.get_uk_time())
-          screen.awake()
-          state = _ScreenState.ACTIVE
-        else:
-          # Check again in 10s
-          sleep_time_us = int(10 * 1e6)
-      else:
-        raise ValueError('Unrecognized screen state: {}'.format(state))
 
       gc.collect()
       elapsed = time.ticks_diff(time.ticks_us(), start)
-      sleep_for = sleep_time_us - elapsed
+      sleep_for = refresh_rate_us - elapsed
       if sleep_for > 0:
         time.sleep_us(sleep_for)
     logging.log('Render thread closing...')

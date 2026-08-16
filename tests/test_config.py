@@ -24,15 +24,9 @@ Run with:
 
 import os
 import sys
-import types
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
-# time_range uses micropython.const, which only exists on the device.
-_micropython = types.ModuleType('micropython')
-_micropython.const = lambda value: value
-sys.modules.setdefault('micropython', _micropython)
 
 import config
 

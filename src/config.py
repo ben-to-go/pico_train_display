@@ -20,9 +20,6 @@
 
 import os
 
-import time_range
-
-
 def _token_from_env() -> str | None:
   """RTT_TOKEN from the environment, if there is one.
 
@@ -69,13 +66,11 @@ class DisplayConfig:
       self,
       refresh: int,
       flip: bool = False,
-      active_time: str | None = None,
       scroll_speed: int = 60,
       contrast: int = 255,
   ):
     self.refresh = refresh
     self.flip = flip
-    self.active_time = time_range.parse(active_time) if active_time else None
     # Pixels a second, so it does not depend on refresh.
     self.scroll_speed = scroll_speed
     # How hard the panel is driven, 0 to 255. The chip powers up at 127, which

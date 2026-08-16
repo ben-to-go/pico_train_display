@@ -454,7 +454,7 @@ class MainWidget(Widget):
     """
     stale = self._departure_updater.stale()
     # Drawn every time rather than only on change, so that it comes back after
-    # anything else clears the screen, such as waking from out of hours.
+    # anything else clears the screen.
     self._screen.fill_rect(
         self._screen.width - _STALE_DOT_SIZE,
         self._screen.height - _STALE_DOT_SIZE,
