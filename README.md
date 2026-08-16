@@ -1,8 +1,5 @@
 # 🚂 Pico train departure display 🚂
 
-The board from the platform, on your shelf. It shows the next trains from your
-station to the one you actually travel to, and nothing else.
-
 A MicroPython-based application for displaying near-realtime UK railway
 departure times. It runs on a
 [Raspberry Pi Pico 2 W](https://www.raspberrypi.com/products/raspberry-pi-pico-2/)
