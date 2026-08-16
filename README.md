@@ -50,9 +50,9 @@ Both the Pico W and the Pico 2 W are supported. To install:
    micro-USB cable to your computer. This will put the Raspberry Pi Pico into
    USB mass storage device mode.
 1. Copy the downloaded file for your board to the mounted device: 
-   [`pico_train_display_pico_w.uf2`](https://github.com/ben-to-go/pico_train_display/releases/latest/download/pico_train_display_pico_w.uf2)
+   [`pico_train_display_RPI_PICO_W.uf2`](https://github.com/ben-to-go/pico_train_display/releases/latest/download/pico_train_display_RPI_PICO_W.uf2)
    for a Pico W, or
-   [`pico_train_display_pico2_w.uf2`](https://github.com/ben-to-go/pico_train_display/releases/latest/download/pico_train_display_pico2_w.uf2)
+   [`pico_train_display_RPI_PICO2_W.uf2`](https://github.com/ben-to-go/pico_train_display/releases/latest/download/pico_train_display_RPI_PICO2_W.uf2)
    for a Pico 2 W. The two are not interchangeable: each carries a UF2 family
    the other board's bootloader ignores. Once complete, the device should
    automatically disconnect.
