@@ -41,7 +41,11 @@ against.
 
 ## Building your own display
 
-> TODO: Add steps on how to build the display from scratch!
+Nothing to solder and nothing to print. The Pico comes with its headers
+already on, the panel has its own, and jumper wires go straight between the
+two, so it is one sitting and no tools you do not already own.
+
+[docs/build-your-own.md](docs/build-your-own.md) has the parts and the wiring.
 
 ## Installation
 
