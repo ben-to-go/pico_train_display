@@ -69,14 +69,21 @@ _BOARDS = {
         'family': 0xE48BFF56,  # RP2040
         'flash': 2 * 1024 * 1024,
         'ram': 264 * 1024,
+        'filesystem': 848 * 1024,
     },
     'RPI_PICO2_W': {
         'family': 0xE48BFF59,  # RP2350, Arm secure
         'flash': 4 * 1024 * 1024,
         'ram': 520 * 1024,
+        'filesystem': 2560 * 1024,
     },
 }
 
+# How much flash MicroPython keeps for its filesystem is a property of its rp2
+# port rather than of the board, so it is worth checking after a version bump.
+# Read it off a built image with `picotool info -a firmware.uf2`, which prints
+# it as "embedded drive"; --filesystem-bytes overrides these.
+#
 # The firmware is useless without these, and a manifest mistake is quiet.
 # What gets frozen is manifest.py, via:
 # https://docs.micropython.org/en/latest/reference/manifest.html
@@ -150,6 +157,8 @@ def static_ram(path):
 
 def check(uf2_path, board_name, filesystem_bytes, elf_path):
   board = _BOARDS[board_name]
+  if filesystem_bytes is None:
+    filesystem_bytes = board['filesystem']
   extents, raw = read_uf2(uf2_path)
   failures = []
 
@@ -222,9 +231,8 @@ def main():
   parser.add_argument('--board', required=True, choices=sorted(_BOARDS))
   parser.add_argument(
       '--filesystem-bytes',
-      required=True,
       type=int,
-      help='MICROPY_HW_FLASH_STORAGE_BYTES, as the build defines it',
+      help='flash kept for the filesystem; defaults to what this port reserves',
   )
   parser.add_argument('--elf', help='firmware.elf, for the RAM check')
   args = parser.parse_args()

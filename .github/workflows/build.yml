@@ -60,12 +60,8 @@ jobs:
     - name: Check firmware suits the board
       run: |
         pushd micropython/ports/rp2/build-${{ matrix.board }}
-        filesystem=$(grep -rhom1 'MICROPY_HW_FLASH_STORAGE_BYTES=[0-9]*' . \
-          | cut -d= -f2)
         python3 $GITHUB_WORKSPACE/main/tools/check_firmware.py firmware.uf2 \
-          --board ${{ matrix.board }} \
-          --filesystem-bytes "$filesystem" \
-          --elf firmware.elf
+          --board ${{ matrix.board }} --elf firmware.elf
         popd
     - name: Rename UF2
       run: |
