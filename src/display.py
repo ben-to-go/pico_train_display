@@ -52,7 +52,7 @@ class Display(framebuf.FrameBuffer):
     ...
 
 
-def create(flip_display: bool = False):
+def create(flip_display: bool = False, contrast: int = 255):
   """Builds the display, wired as this project wires it.
 
   The panel is strapped for 8080 8-bit parallel, so the wiring is GP0-GP7 for
@@ -62,4 +62,6 @@ def create(flip_display: bool = False):
   import parallel8080
   import ssd1322
 
-  return ssd1322.SSD1322(parallel8080.ParallelBus(), flip_display=flip_display)
+  return ssd1322.SSD1322(
+      parallel8080.ParallelBus(), flip_display=flip_display, contrast=contrast
+  )

@@ -35,6 +35,7 @@ class SSD1322(display.Display):
       width: int = 256,
       height: int = 64,
       flip_display: bool = False,
+      contrast: int = 255,
   ):
     self._bus = bus
     # Commands go out one byte at a time, often enough that allocating a
@@ -48,9 +49,9 @@ class SSD1322(display.Display):
     super().__init__(self._buffer, width, height, framebuf.GS4_HMSB)
     self.fill(0)
 
-    self._init_display(flip_display)
+    self._init_display(flip_display, contrast)
 
-  def _init_display(self, flip_display: bool):
+  def _init_display(self, flip_display: bool, contrast: int):
     self._bus.reset()
 
     # fmt: off
@@ -65,7 +66,7 @@ class SSD1322(display.Display):
     self.write_cmd(0xB5, 0x00)        # Set GPIO (disabled)
     self.write_cmd(0xAB, 0x01)        # Function select (internal Vdd)
     self.write_cmd(0xB4, 0xA0, 0xFD)  # Display enhancement A (External VSL)
-    self.write_cmd(0xC1, 0x7F)        # Set contrast current (default)
+    self.write_cmd(0xC1, contrast)    # Set contrast current
     self.write_cmd(0xC7, 0x0F)        # Master contrast (reset)
     self.write_cmd(0xB9)              # Set default greyscale table
     # The three analog settings below are the values this panel was brought up
