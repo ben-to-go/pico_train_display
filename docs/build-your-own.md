@@ -90,10 +90,26 @@ name, a password and an address.
    `MYB`.
 4. Save. It restarts and the board appears.
 
-Those settings live in flash and survive a firmware update. To change them,
-delete `config.json` over USB or erase the flash with
-[flash_nuke.uf2](https://datasheets.raspberrypi.com/soft/flash_nuke.uf2) and
-flash the firmware again.
+## Changing the settings later
+
+They are kept in a `config.json` in flash, above where the firmware lives, so
+they survive a firmware update. There is no settings page on a running board:
+the setup screen only appears when there is no config at all. So to change
+your wifi, or the station, you have to remove the file.
+
+Surgically, with the board plugged into a computer:
+
+```sh
+pip install mpremote
+mpremote connect auto fs rm :config.json
+```
+
+Or by wiping the flash and starting over: hold BOOTSEL, plug in, and copy
+[flash_nuke.uf2](https://datasheets.raspberrypi.com/soft/flash_nuke.uf2)
+across, then the firmware again. The same file works on both boards, because
+alongside its RP2040 blocks it carries a set marked
+[`RP2XXX_ABSOLUTE`](https://github.com/microsoft/uf2/blob/master/utils/uf2families.json),
+which every Raspberry Pi bootloader accepts.
 
 ## If nothing appears
 

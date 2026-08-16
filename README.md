@@ -40,10 +40,11 @@ which was challenging due to its limited RAM, and with an SSD1322-based display.
 
 ## Building your own display
 
-A Pico 2 WH, a 3.12" SSD1322 panel and fifteen jumper wires. No soldering,
-because the panel arrives speaking 8080 parallel and this firmware speaks it
-back. [docs/build-your-own.md](docs/build-your-own.md) has the shopping list
-and the wiring.
+Nothing to solder and nothing to print. The Pico comes with its headers
+already on, the panel has its own, and jumper wires go straight between the
+two, so it is one sitting and no tools you do not already own.
+
+[docs/build-your-own.md](docs/build-your-own.md) has the parts and the wiring.
 
 ## Installation
 
