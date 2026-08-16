@@ -6,9 +6,6 @@ __pycache__/
 .env
 sim/out/
 build/
-# The firmware writes this beside config.json once the wifi has worked, and
-# the simulator writes it here.
-wifi_ok
 
 # Firmware images, wherever they end up.
 *.uf2

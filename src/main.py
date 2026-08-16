@@ -22,7 +22,6 @@ import asyncio
 import errno
 import gc
 import json
-import os
 import sys
 import time
 import _thread
@@ -54,25 +53,11 @@ _SETUP_MESSAGE = (
 
 _CONNECT_TIMEOUT = 15
 
-# Written once the configured wifi has actually worked. Its absence means the
-# details in config.json have never connected to anything, which is a typo far
-# more often than it is a network that has been down since the moment they
-# were typed in.
-_WIFI_PROVEN = 'wifi_ok'
-
 gc.collect()
 
 
 class _NeedsSetup(Exception):
-  """The wifi details have never worked, so they are worth asking for again."""
-
-
-def _wifi_has_worked() -> bool:
-  try:
-    open(_WIFI_PROVEN).close()
-    return True
-  except OSError:
-    return False
+  """The wifi would not connect, so the details are worth asking for again."""
 
 
 def _connect(
@@ -193,16 +178,13 @@ def run(config: config_module.Config):
     gc.threshold(gc.mem_free() // 4 + gc.mem_alloc())
 
     wlan = _connect(config.wifi.ssid, config.wifi.password, screen=screen)
-    if wlan is None and not _wifi_has_worked():
-      # Never having connected is different from having stopped connecting.
-      # The first is a password that was typed in wrong a minute ago and can
-      # be fixed by asking again; the second is a network that is down, which
-      # the board rides out on its baked-in departures.
+    if wlan is None:
+      # A wrong password and a network that has moved look the same from here,
+      # and both are fixed by the same screen. Asking is the only thing the
+      # board can do about either, so it asks.
       raise _NeedsSetup()
-    if wlan is not None and not _wifi_has_worked():
-      open(_WIFI_PROVEN, 'w').close()
 
-    clock_set = _configure_time() if wlan is not None else False
+    clock_set = _configure_time()
 
     logging.log('Get initial train departures')
     widget = widgets.MessageWidget(
@@ -319,11 +301,6 @@ async def setup(screen: display.Display):
     _ = config_module.load(cfg)
     with open('config.json', 'w') as f:
       json.dump(cfg, f)
-    # Whatever has just been typed in has to prove itself.
-    try:
-      os.remove(_WIFI_PROVEN)
-    except OSError:
-      pass
 
   web_server = await server.start(_write_config, event)
   await event.wait()
@@ -363,7 +340,7 @@ def main():
   try:
     run(config)
   except _NeedsSetup:
-    logging.log('Wifi has never worked with these details, asking again.')
+    logging.log('Could not join the wifi, asking for the details again.')
     _run_setup()
 
 
