@@ -2,14 +2,14 @@
 
 ## v2.0.0
 
-Rebuilt around the hardware it actually runs on, and around the API not always
-being there.
+Rebuilt around the Pico 2 W and the next generation Realtime Trains API at
+`https://data.rtt.io`.
 
 - Drives the panel over 8080 8-bit parallel instead of SPI.
-- Runs on the Pico 2 W, and only the Pico 2 W.
-- Moved to the next generation Realtime Trains API at `https://data.rtt.io`.
-- Laid out like a real platform indicator, measured off a photograph of one.
-- Keeps showing departures when the wifi, the clock or the API give out.
+- Laid out like a real National Rail platform indicator, measured off a
+  photograph of one.
+- Keeps showing departures when the wifi, the clock or the API give out: a real
+  Chiltern Railways morning is baked in for when nothing has ever loaded.
 - Polls inside the API's rate limit, and backs off when it is refused.
 - Gained a desktop simulator, a one command firmware build and a build guide.
 - Lost the proxy server, the e-Paper display and the fast train icon.
