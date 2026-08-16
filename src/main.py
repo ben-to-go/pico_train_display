@@ -128,8 +128,6 @@ def _render_thread(
         departure_updater,
         fonts.DEFAULT_FONT,
         fonts.CLOCK_FONT,
-        # Don't render seconds on e-paper displays.
-        render_seconds=(config.display.type != 'epd29b'),
         scroll_speed=config.display.scroll_speed,
     )
     non_active = widgets.MessageWidget(
@@ -186,7 +184,7 @@ def _render_thread(
 def run(config: config_module.Config):
   logging.log('Starting...')
 
-  screen = display.create(config.display.type, config.display.flip)
+  screen = display.create(config.display.flip)
   main_running = _thread.allocate_lock()
   thread_running = _thread.allocate_lock()
   try:
@@ -206,13 +204,11 @@ def run(config: config_module.Config):
     _configure_time()
 
     logging.log('Get initial train departures')
-    # Don't show loading departures for e-Paper displays.
-    if config.display.type != 'epd29b':
-      widget = widgets.MessageWidget(
-          screen, _LOADING_DEPARTURES, fonts.DEFAULT_FONT
-      )
-      widget.render()
-      screen.flush()
+    widget = widgets.MessageWidget(
+        screen, _LOADING_DEPARTURES, fonts.DEFAULT_FONT
+    )
+    widget.render()
+    screen.flush()
 
     # Get first set of departures synchonously. A failure here is not fatal:
     # the display falls back to the departures baked into the firmware, and
