@@ -22,7 +22,7 @@ beside it: [docs/display-format.md](docs/display-format.md).
   drops out.
 - Two boards and fifteen wires. Nothing to solder, nothing to print.
 
-## Build one
+## Installation
 
 Off-the-shelf parts, all of it bought online, running the firmware this repo
 builds and publishes to its
