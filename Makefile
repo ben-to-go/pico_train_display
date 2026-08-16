@@ -12,7 +12,12 @@ export MICROPYTHON ?= $(MICROPYTHON_DIR)/ports/unix/build-standard/micropython
 
 BOARD ?= RPI_PICO2_W
 RP2_BUILD = $(MICROPYTHON_DIR)/ports/rp2/build-$(BOARD)
-FIRMWARE = build/pico_train_display_$(BOARD).uf2
+
+# In the name of every image built, so a uf2 on a desktop somewhere can still
+# be traced back to what made it. A tag on a release, and the tag plus the
+# commit anywhere else.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo unknown)
+FIRMWARE = build/pico_train_display_$(BOARD)_$(VERSION).uf2
 
 .PHONY: sim test firmware firmware-depend sim-depend unix-port
 

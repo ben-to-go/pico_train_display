@@ -73,8 +73,8 @@ Two things to check before powering up:
 
 1. Hold **BOOTSEL** while plugging the Pico into your computer. It appears as
    a USB drive.
-2. Copy
-   [`pico_train_display_RPI_PICO2_W.uf2`](https://github.com/ben-to-go/pico_train_display/releases/latest/download/pico_train_display_RPI_PICO2_W.uf2)
+2. Copy the `.uf2` from the
+   [latest release](https://github.com/ben-to-go/pico_train_display/releases/latest)
    onto it. The drive disconnects by itself when it is done.
 
 ## Set it up
@@ -101,8 +101,9 @@ So to change your wifi or your station, wipe it and set it up again. Hold
 
 1. [`flash_nuke.uf2`](https://datasheets.raspberrypi.com/soft/flash_nuke.uf2),
    which erases the lot. It works on either board.
-2. [`pico_train_display_RPI_PICO2_W.uf2`](https://github.com/ben-to-go/pico_train_display/releases/latest/download/pico_train_display_RPI_PICO2_W.uf2)
-   again, from the latest release.
+2. the `.uf2` from the
+   [latest release](https://github.com/ben-to-go/pico_train_display/releases/latest)
+   again.
 
 The setup screen comes back.
 
