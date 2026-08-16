@@ -71,6 +71,24 @@ the entire flash memory, which can be done by following the official
 [resetting flash memory](https://www.raspberrypi.com/documentation/microcontrollers/raspberry-pi-pico.html#resetting-flash-memory)
 instructions. Once flashed, you'll need to re-install the software again.
 
+## Development
+
+The display can be worked on without a Pico or a screen: the
+[simulator](sim/README.md) runs the firmware unmodified and draws the panel in
+your terminal.
+
+| | |
+|---|---|
+| `make sim` | the panel, in this terminal |
+| `make test` | the unit tests, exactly as CI runs them |
+| `make sim-depend` | everything the simulator needs, from nothing |
+| `make act-depend` | [act](https://nektosact.com) into `bin/`; checks for Docker, never installs it |
+| `make act` | run the build workflow locally, firmware into `artifacts/` |
+| `make unix-port` | rebuild just the MicroPython the simulator runs on |
+
+The firmware is built by [`.github/workflows/build.yml`](.github/workflows/build.yml),
+and `make act` runs that same workflow, so there is no second copy of the build.
+
 ## Credits
 
 Firstly, a massive thank you to [Dave Ingram](https://github.com/dingram) for
