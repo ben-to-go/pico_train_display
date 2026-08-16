@@ -1,10 +1,15 @@
 # What the board does when something breaks
 
 The display hangs off a chain: mains power, then wifi, then a clock, then two
-API calls. Every link in it fails sooner or later. The rule this project
-follows is that **the board keeps showing departures**, because a platform
-indicator showing yesterday's train is more use than one showing nothing, and
-none of it is worth resetting the device over.
+API calls. Every link in it fails sooner or later.
+
+There are two rules, and which applies depends on whether the board has got
+going yet. **At startup, no wifi means the settings get asked for again**,
+because a board that cannot reach its network is no use and the screen that
+fixes it is the one it already knows how to show. **Once it is running, it
+keeps showing departures**, because a platform indicator showing yesterday's
+train is more use than one showing nothing, and nothing after that point is
+worth interrupting a working display over.
 
 This is what happens at each link, in the order the firmware meets them.
 
@@ -14,15 +19,31 @@ This is what happens at each link, in the order the firmware meets them.
 |---|---|---|---|
 | 1 | read `config.json` | `main.main` | no config means first boot: run the [setup portal](#first-boot-no-config) instead |
 | 2 | bring the panel up | `display.create` | nothing catches this. See [not covered](#what-is-not-covered) |
-| 3 | join wifi, 15s | `main._connect` | log it, carry on with no network |
+| 3 | join wifi, 15s | `main._connect` | [ask for the settings again](#no-wifi-at-startup) |
 | 4 | set the clock from NTP, 15s | `main._configure_time` | log it, carry on with the clock unset |
 | 5 | first departures fetch | `trains.DepartureUpdater.update` | show the [baked-in board](#the-baked-in-board), mark it stale |
 | 6 | start drawing | `main._render_thread` | — |
 | 7 | refetch, forever | the loop in `main.run` | keep the last good board, [dot on](#the-stale-dot), try again |
 
-Steps 3, 4 and 5 are each allowed to fail without stopping the ones after
-them. That is the whole design: **by step 6 there is always something on the
-screen**, whether or not any of 3 to 5 worked.
+Step 3 is the only one that stops the rest. Steps 4 and 5 are each allowed to
+fail without stopping what follows, so **by step 6 there is always something on
+the screen**, whether or not the clock or the API answered.
+
+## No wifi at startup
+
+The board shows the setup screen, the same one a board with no config shows.
+
+Not being able to join a network looks identical whether the password was
+typed in wrong a minute ago or the network was renamed last week, and the same
+screen fixes both, so the board does not try to tell them apart. It is also
+the only thing it can do about either.
+
+This is startup only. A network that drops out later is the refetch loop's
+problem, and it deals with it by carrying on.
+
+The cost is that a power cut takes out the router as well, and the Pico comes
+back faster than the router does. Fifteen seconds is not always long enough to
+wait for one, and a board that gives up lands in setup until someone notices.
 
 ## The refetch loop
 
@@ -126,16 +147,20 @@ from the pavement.
 
 ## First boot, no config
 
-`config.json` missing is not a failure, it is the setup path:
+`config.json` missing is not a failure, it is the setup path. So is one this
+firmware cannot read: a setting that has since been removed, a value out of
+range, a file that got truncated. All of them mean there is nothing to run on,
+so all of them ask:
 
 1. the Pico starts its own access point, `Pico Train Display` / `12345678`
 2. the panel shows that name, the password, and an IP
 3. you join it and fill in the form the Pico serves
 4. it validates, writes `config.json`, and reboots into the board
 
-The config is only ever written when there isn't one. There is no settings
-page on a running display; to change anything, delete `config.json` over USB
-or reset the flash.
+There is no settings page on a running display. To change the station, delete
+`config.json` over USB or reset the flash. To change the network, you can also
+just move the board somewhere its old one is not: it will fail to join at
+startup and ask.
 
 ## What is not covered
 
@@ -143,9 +168,6 @@ Worth being explicit about the edges:
 
 - **The panel itself.** If `display.create()` fails there is nowhere to report
   it, and the board resets.
-- **A corrupt `config.json`.** Malformed JSON raises where only `OSError` is
-  caught, so the board resets, and the setup portal does not appear because
-  the file exists. Recovery is over USB.
 - **The clock, when NTP never answers.** The board draws whatever the RTC
   says, which on a Pico with no network is wrong rather than absent.
 - **A full flash.** `debug.txt` is appended to and never rotated.

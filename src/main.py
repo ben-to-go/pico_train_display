@@ -56,6 +56,10 @@ _CONNECT_TIMEOUT = 15
 gc.collect()
 
 
+class _NeedsSetup(Exception):
+  """The wifi would not connect, so the details are worth asking for again."""
+
+
 def _connect(
     ssid: str, password: str, screen: display.Display | None = None
 ) -> network.WLAN | None:
@@ -174,7 +178,13 @@ def run(config: config_module.Config):
     gc.threshold(gc.mem_free() // 4 + gc.mem_alloc())
 
     wlan = _connect(config.wifi.ssid, config.wifi.password, screen=screen)
-    clock_set = _configure_time() if wlan is not None else False
+    if wlan is None:
+      # A wrong password and a network that has moved look the same from here,
+      # and both are fixed by the same screen. Asking is the only thing the
+      # board can do about either, so it asks.
+      raise _NeedsSetup()
+
+    clock_set = _configure_time()
 
     logging.log('Get initial train departures')
     widget = widgets.MessageWidget(
@@ -300,6 +310,16 @@ async def setup(screen: display.Display):
   await web_server.wait_closed()
 
 
+def _run_setup():
+  """Asks for the settings, writes them, and restarts into them."""
+  screen = display.create()
+  try:
+    asyncio.run(setup(screen))
+    machine.reset()
+  finally:
+    screen.close()
+
+
 def main():
   try:
     with open('config.json', 'r') as f:
@@ -312,16 +332,17 @@ def main():
     # an unreadable one still counts as a config.
     logging.log('No usable config, starting setup.')
     sys.print_exception(e)
-    screen = display.create()
-    try:
-      asyncio.run(setup(screen))
-      machine.reset()
-    finally:
-      screen.close()
+    _run_setup()
+    return
 
   if config.debug.log:
     logging.set_logging_file('debug.txt')
-  run(config)
+
+  try:
+    run(config)
+  except _NeedsSetup:
+    logging.log('Could not join the wifi, asking for the details again.')
+    _run_setup()
 
 
 if __name__ == '__main__':

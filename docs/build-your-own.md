@@ -93,11 +93,15 @@ name, a password and an address.
 ## Changing the settings later
 
 They are kept in a `config.json` in flash, above where the firmware lives, so
-they survive a firmware update. There is no settings page on a running board
-either: the setup screen only appears when there is no config at all.
+they survive a firmware update. There is no settings page on a running board.
 
-So to change your wifi or your station, wipe it and set it up again. Hold
-**BOOTSEL**, plug in, and copy two files across in turn:
+**Changing wifi** takes care of itself. If the board cannot join the network in
+its config when it starts up, it shows the setup screen again, so moving house
+means plugging it in and filling the form in once more.
+
+**Changing the station** means removing the config, because a board that is
+working has no reason to ask. Hold **BOOTSEL**, plug in, and copy two files
+across in turn:
 
 1. [`flash_nuke.uf2`](https://datasheets.raspberrypi.com/soft/flash_nuke.uf2),
    which erases the lot. It works on either board.
