@@ -58,54 +58,69 @@ _CONNECT_TIMEOUT = 15
 gc.collect()
 
 
-def _connect(ssid: str, password: str, screen: display.Display) -> network.WLAN:
-  widget = widgets.MessageWidget(screen, _WIFI_CONNECT, fonts.DEFAULT_FONT)
+def _connect(
+    ssid: str, password: str, screen: display.Display | None = None
+) -> network.WLAN | None:
+  """Associates with the configured network, or gives up and returns None.
+
+  Wifi is the first link in the chain to the API and it breaks like any other:
+  the network gets renamed, the password changes, the router is off. None of
+  that is worth resetting the board over, because it has departures to show
+  either way, so this reports failure rather than raising it.
+
+  With no screen it retries quietly, leaving whatever is on the panel alone.
+  """
+  widget = (
+      widgets.MessageWidget(screen, _WIFI_CONNECT, fonts.DEFAULT_FONT)
+      if screen is not None
+      else None
+  )
   logging.log('Connecting to SSID: {} PASSWORD: {}', ssid, '*' * len(password))
 
-  wlan = network.WLAN(network.STA_IF)
-  wlan.active(True)
-  wlan.connect(ssid, password if password else None)
+  try:
+    wlan = network.WLAN(network.STA_IF)
+    wlan.active(True)
+    wlan.connect(ssid, password if password else None)
 
-  for i in range(_CONNECT_TIMEOUT):
-    if wlan.isconnected():
-      logging.log('Connected!')
-      logging.log(wlan.ifconfig())
-      return wlan
+    for i in range(_CONNECT_TIMEOUT):
+      if wlan.isconnected():
+        logging.log('Connected!')
+        logging.log(wlan.ifconfig())
+        return wlan
 
-    widget.render('{}{}'.format(_WIFI_CONNECT, '.' * (i % 4)))
-    screen.flush()
-    time.sleep(1)
+      if widget is not None:
+        widget.render('{}{}'.format(_WIFI_CONNECT, '.' * (i % 4)))
+        screen.flush()
+      time.sleep(1)
+  except Exception as e:
+    # A rejected password surfaces differently on every port, and the radio
+    # itself can refuse to come up. They all mean the same thing here.
+    logging.log('Wifi connect failed!')
+    sys.print_exception(e)
+    return None
 
-  raise OSError(
-      errno.ETIMEDOUT,
-      'Failed to connect to wifi in {} secs'.format(_CONNECT_TIMEOUT),
-  )
-
-
-def _reconnect(wlan: network.WLAN, ssid: str, password: str):
-  wlan.active(True)
-  wlan.connect(ssid, password if password else None)
-  for _ in range(_CONNECT_TIMEOUT):
-    if wlan.isconnected():
-      logging.log('Reconnected to wifi!')
-      return
-
-    time.sleep(1)
-  raise TimeoutError(
-      'Failed to reconnect to wifi in {} secs'.format(_CONNECT_TIMEOUT)
-  )
+  logging.log('Failed to connect to wifi in {} secs', _CONNECT_TIMEOUT)
+  return None
 
 
-def _configure_time():
+def _configure_time() -> bool:
+  """Sets the clock from NTP, reporting whether it managed to.
+
+  The same chain: no network means no time either. Bounded, because a board
+  that cannot reach NTP still has a display to draw.
+  """
   logging.log('Configure datetime.')
-  while True:
+  for _ in range(_CONNECT_TIMEOUT):
     try:
       ntptime.settime()
-      break
-    except OSError:
-      pass
-  t = time.localtime()
-  logging.log('Time set to UTC {}/{}/{} {}:{}', *t[:5])
+      t = time.localtime()
+      logging.log('Time set to UTC {}/{}/{} {}:{}', *t[:5])
+      return True
+    except Exception:
+      time.sleep(1)
+
+  logging.log('Failed to reach NTP in {} secs', _CONNECT_TIMEOUT)
+  return False
 
 
 # TODO: Make this an enum when micropython supports such a thing
@@ -201,7 +216,7 @@ def run(config: config_module.Config):
     gc.threshold(gc.mem_free() // 4 + gc.mem_alloc())
 
     wlan = _connect(config.wifi.ssid, config.wifi.password, screen=screen)
-    _configure_time()
+    clock_set = _configure_time() if wlan is not None else False
 
     logging.log('Get initial train departures')
     widget = widgets.MessageWidget(
@@ -229,6 +244,14 @@ def run(config: config_module.Config):
     update_interval = config.rtt.update_interval
     logging.log('Start updating departures every {} seconds', update_interval)
     while True:
+      # The whole chain, rebuilt from wherever it broke: the aerial first,
+      # then the clock, then the API. Any link can be down at any point, and
+      # the board keeps showing what it has while they come back.
+      if wlan is None or not wlan.isconnected():
+        wlan = _connect(config.wifi.ssid, config.wifi.password)
+      if wlan is not None and not clock_set:
+        clock_set = _configure_time()
+
       for attempt in range(1, _MAX_ATTEMPTS + 1):
         try:
           departure_updater.update()
@@ -240,8 +263,10 @@ def run(config: config_module.Config):
           # parse. The board keeps showing what it has either way, so none of
           # it is worth resetting the device over.
           if isinstance(e, OSError) and e.errno == errno.ECONNABORTED:
+            # Aborted mid-request, which can happen while still associated,
+            # so the check at the top of the loop would not catch it.
             logging.log('Received ECONNABORTED error, try reconnecting...')
-            _reconnect(wlan, config.wifi.ssid, config.wifi.password)
+            wlan = _connect(config.wifi.ssid, config.wifi.password)
           logging.log(
               'Train update attempt {}/{} failed!', attempt, _MAX_ATTEMPTS
           )
