@@ -122,8 +122,13 @@ class ParallelBus:
   """The bus as the driver sees it: bytes, and whether they are commands."""
 
   def __init__(self):
-    self._data = [machine.Pin(i, machine.Pin.OUT, value=0) for i in range(8)]
-    self._wr = machine.Pin(_WR_PIN, machine.Pin.OUT, value=1)
+    # The data lines and the strobe are set up and then let go: configuring a
+    # pin leaves the pad an output for good, and the write loop drives them
+    # through the register rather than through these objects.
+    for pin in range(8):
+      machine.Pin(pin, machine.Pin.OUT, value=0)
+    machine.Pin(_WR_PIN, machine.Pin.OUT, value=1)
+
     self._dc = machine.Pin(_DC_PIN, machine.Pin.OUT, value=0)
     self._rst = machine.Pin(_RST_PIN, machine.Pin.OUT, value=1)
     self._cs = machine.Pin(_CS_PIN, machine.Pin.OUT, value=1)

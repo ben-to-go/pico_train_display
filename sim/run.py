@@ -1,11 +1,12 @@
 """Runs the firmware on a desktop, with the panel drawn in the terminal.
 
-The project is not modified and knows nothing about this. Four modules on
+The project is not modified and knows nothing about this. Five modules on
 MICROPYPATH stand in for what a desktop does not have, and the rest is
 main.py:
 
-  machine.py   Pin and SPI; opening the display's bus creates the panel
-  panel.py     the SSD1322 itself, decoding the driver's SPI stream and
+  machine.py   Pin, which is only asked to remember levels
+  parallel8080 the panel's bus; opening it creates the panel
+  panel.py     the SSD1322 itself, decoding the driver's command stream and
                drawing what it reconstructs
   network.py   a CYW43 that is always associated
   ntptime.py   NTP, since the host clock is already right

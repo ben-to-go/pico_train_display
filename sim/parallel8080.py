@@ -19,11 +19,9 @@ class ParallelBus:
     import panel
 
     self._panel = panel.Panel()
-    self.bytes_written = 0
 
   def reset(self):
     pass
 
   def write(self, buf, dc: int):
-    self.bytes_written += len(buf)
     self._panel.write(bytes(buf), dc)

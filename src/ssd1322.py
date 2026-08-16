@@ -51,7 +51,7 @@ class SSD1322(display.Display):
     self._init_display(flip_display)
 
   def _init_display(self, flip_display: bool):
-    self._reset()
+    self._bus.reset()
 
     # fmt: off
     self.write_cmd(0xFD, 0x12)        # Unlock IC
@@ -84,9 +84,6 @@ class SSD1322(display.Display):
 
     self.fill(0)
     self.flush()
-
-  def _reset(self):
-    self._bus.reset()
 
   @property
   def width(self) -> int:

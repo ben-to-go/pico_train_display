@@ -88,12 +88,7 @@ _BOARDS = {
 # What gets frozen is manifest.py, via:
 # https://docs.micropython.org/en/latest/reference/manifest.html
 _EXPECTED_FROZEN = (
-    'main',
-    'trains',
-    'widgets',
-    'fallback',
-    'ssd1322',
-    'parallel8080',
+    'main', 'trains', 'widgets', 'fallback', 'ssd1322', 'parallel8080'
 )
 
 # MicroPython allocates its heap from whatever SRAM the linker did not claim:

@@ -1,16 +1,10 @@
 """Fake `machine` module so firmware can run on the MicroPython unix port.
 
-Pin state is kept in a shared table; the fake SPI looks up the D/C pin on every
-transfer so it can tell the attached panel emulator whether the bytes it is
-being handed are commands or data.
+Pin state is kept in a shared table. The panel hangs off parallel8080 rather
+than anything in here, so this is only ever asked to remember pin levels.
 """
 
 PIN_STATE = {}
-
-# GPIO the SSD1322 driver uses for D/C, and the bus it hangs off. Both from
-# display.create(), which is where this project wires the panel up.
-DC_PIN = 20
-DISPLAY_BUS = 0
 
 
 class Pin:
@@ -54,47 +48,6 @@ class Pin:
 
   def __repr__(self):
     return 'Pin({}, value={})'.format(self.id, PIN_STATE[self.id])
-
-
-class SPI:
-  """SPI bus that forwards everything written to an attached sink."""
-
-  MSB = 0
-  LSB = 1
-
-  def __init__(self, id, baudrate=1000000, polarity=0, phase=0, bits=8,
-               firstbit=MSB, sck=None, mosi=None, miso=None):
-    self.id = id
-    self.baudrate = baudrate
-    self.bytes_written = 0
-    # Opening the display's bus is what brings the panel into being, so
-    # nothing outside has to wire the two together.
-    if id == DISPLAY_BUS:
-      import panel
-
-      self._panel = panel.Panel()
-    else:
-      self._panel = None
-
-  def init(self, *args, **kwargs):
-    pass
-
-  def deinit(self):
-    pass
-
-  def write(self, buf):
-    self.bytes_written += len(buf)
-    if self._panel is not None:
-      self._panel.write(bytes(buf), PIN_STATE.get(DC_PIN, 0))
-
-  def write_readinto(self, tx, rx):
-    self.write(tx)
-    for i in range(len(rx)):
-      rx[i] = 0
-
-  def readinto(self, buf, write=0):
-    for i in range(len(buf)):
-      buf[i] = 0
 
 
 class RTC:

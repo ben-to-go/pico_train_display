@@ -7,3 +7,6 @@ __pycache__/
 sim/out/
 bin/
 artifacts/
+
+# Firmware images, which act leaves lying about.
+*.uf2
