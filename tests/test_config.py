@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 # framebuf.FrameBuffer, so it cannot be imported here at all; only displays()
 # is needed to validate a config. time_range uses micropython.const.
 _display = types.ModuleType('display')
-_display.displays = lambda: {'epd29b', 'ssd1322'}
+_display.displays = lambda: {'ssd1322'}
 sys.modules.setdefault('display', _display)
 
 _micropython = types.ModuleType('micropython')

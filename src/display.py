@@ -57,36 +57,23 @@ class Display(framebuf.FrameBuffer):
 
 
 def displays():
-  return {'epd29b', _DEFAULT_DISPLAY}
+  return {_DEFAULT_DISPLAY}
 
 
 def create(name: str = _DEFAULT_DISPLAY, flip_display: bool = False):
   """Factory function to create display."""
-  name = name.lower()
-  if name == _DEFAULT_DISPLAY:
-    import ssd1322
-
-    spi = machine.SPI(
-        0, baudrate=8_000_000, sck=machine.Pin(18), mosi=machine.Pin(19)
-    )
-    return ssd1322.SSD1322(
-        spi,
-        dc=machine.Pin(20),
-        cs=machine.Pin(17),
-        rst=machine.Pin(21),
-        flip_display=flip_display,
-    )
-  elif name == 'epd29b':
-    import epd29b
-
-    spi = machine.SPI(1, baudrate=4_000_000)
-
-    return epd29b.EPD29B(
-        spi,
-        dc=machine.Pin(8),
-        cs=machine.Pin(9),
-        rst=machine.Pin(12),
-        busy=machine.Pin(13),
-    )
-  else:
+  if name.lower() != _DEFAULT_DISPLAY:
     raise ValueError('Unrecognized display "{}"!'.format(name))
+
+  import ssd1322
+
+  spi = machine.SPI(
+      0, baudrate=8_000_000, sck=machine.Pin(18), mosi=machine.Pin(19)
+  )
+  return ssd1322.SSD1322(
+      spi,
+      dc=machine.Pin(20),
+      cs=machine.Pin(17),
+      rst=machine.Pin(21),
+      flip_display=flip_display,
+  )

@@ -68,12 +68,6 @@ the entire flash memory, which can be done by following the official
 [resetting flash memory](https://www.raspberrypi.com/documentation/microcontrollers/raspberry-pi-pico.html#resetting-flash-memory)
 instructions. Once flashed, you'll need to re-install the software again.
 
-## 🚧 Experimental Displays 🚧
-
-Along with the SSD1322-based displays, there's also experimental support for
-[2.9" e-Paper display](https://www.waveshare.com/wiki/Pico-ePaper-2.9-B). It's
-doesn't look as authentic, but is also super simple to setup!
-
 ## Credits
 
 Firstly, a massive thank you to [Dave Ingram](https://github.com/dingram) for

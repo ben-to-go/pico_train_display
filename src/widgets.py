@@ -101,33 +101,24 @@ class Widget:
 class ClockWidget(Widget):
   """The clock, alone and centred on the bottom row of the board."""
 
-  def __init__(
-      self,
-      screen: display.Display,
-      font: fonts.Font,
-      render_seconds: bool = True,
-  ):
+  def __init__(self, screen: display.Display, font: fonts.Font):
     super().__init__(screen)
     self._font = font
-    self._render_seconds = render_seconds
-    self._bounds = font.calculate_bounds(
-        '00:00:00' if render_seconds else '00:00'
-    )
+    self._bounds = font.calculate_bounds('00:00:00')
     self._last_update = None
 
   def bounds(self):
     return self._bounds
 
   def render(self, now: tuple[int, ...], x: int, y: int, w: int, h: int):
-    current_update = now[3:6] if self._render_seconds else now[3:5]
+    current_update = now[3:6]
     if self._last_update is not None and self._last_update == current_update:
       return False
 
     self._screen.fill_rect(x, y, w, h, 0)
-    text = '{:02d}:{:02d}'.format(now[3], now[4])
-    if self._render_seconds:
-      text += ':{:02d}'.format(now[5])
-    self._font.render_text(text, self._screen, x, y)
+    self._font.render_text(
+        '{:02d}:{:02d}:{:02d}'.format(now[3], now[4], now[5]), self._screen, x, y
+    )
 
     self._last_update = current_update
     return True
@@ -376,7 +367,6 @@ class MainWidget(Widget):
       departure_updater: trains.DepartureUpdater,
       font: fonts.Font,
       clock_font: fonts.Font,
-      render_seconds: bool = True,
       scroll_speed: int = 60,
   ):
     super().__init__(screen)
@@ -384,7 +374,7 @@ class MainWidget(Widget):
 
     # Four rows of the same height. Text uses seven of each row's nine pixels
     # and leaves two for descenders; the clock, having none, fills all nine.
-    self._clock_widget = ClockWidget(screen, clock_font, render_seconds)
+    self._clock_widget = ClockWidget(screen, clock_font)
     self._no_departures_widget = NoDeparturesWidget(screen, font)
     self._calling_at_widget = ScrollingTextWidget(
         screen, font, _CALLING_AT, scroll_speed
