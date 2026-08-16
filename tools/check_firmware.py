@@ -53,7 +53,6 @@ _NOT_MAIN_FLASH = 0x00001000
 # https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf
 _FLASH_BASE = 0x10000000
 _SRAM_BASE = 0x20000000
-_SRAM_END = 0x20080000  # past the largest SRAM either chip has
 
 # Properties of the hardware, not of the build.
 #
@@ -85,6 +84,8 @@ _BOARDS = {
 # it as "embedded drive"; --filesystem-bytes overrides these.
 #
 # The firmware is useless without these, and a manifest mistake is quiet.
+# Looked for as "<name>.py\0", which is how the frozen names are stored, so a
+# module that merely gets mentioned somewhere does not count as present.
 # What gets frozen is manifest.py, via:
 # https://docs.micropython.org/en/latest/reference/manifest.html
 _EXPECTED_FROZEN = ('main', 'trains', 'widgets', 'fallback', 'ssd1322')
@@ -109,6 +110,7 @@ def read_uf2(path):
     raise Failure('{} is not a whole number of UF2 blocks'.format(path))
 
   extents = collections.defaultdict(lambda: [None, 0, 0])
+  contents = []
   for offset in range(0, len(data), _UF2_BLOCK):
     block = data[offset : offset + 32]
     magic0, magic1, flags, address, payload, _, _, family = struct.unpack(
@@ -122,10 +124,16 @@ def read_uf2(path):
     extent[0] = address if extent[0] is None else min(extent[0], address)
     extent[1] = max(extent[1], address + payload)
     extent[2] += 1
-  return {family: tuple(e) for family, e in extents.items()}, data
+    # Kept apart from the block headers, so a string can be searched for
+    # without a header splitting it in two.
+    contents.append(data[offset + 32 : offset + 32 + payload])
+  return (
+      {family: tuple(e) for family, e in extents.items()},
+      b''.join(contents),
+  )
 
 
-def static_ram(path):
+def static_ram(path, sram_bytes):
   """Bytes of SRAM the linker has already spoken for."""
   with open(path, 'rb') as f:
     elf = f.read()
@@ -150,7 +158,7 @@ def static_ram(path):
     # every such section in SRAM catches the vector table, .data, .bss, the
     # heap placeholder and the scratch banks, which is more than
     # arm-none-eabi-size reports as data + bss.
-    if sh_flags & 0x2 and _SRAM_BASE <= sh_addr < _SRAM_END:
+    if sh_flags & 0x2 and _SRAM_BASE <= sh_addr < _SRAM_BASE + sram_bytes:
       total += sh_size
   return total
 
@@ -159,7 +167,7 @@ def check(uf2_path, board_name, filesystem_bytes, elf_path):
   board = _BOARDS[board_name]
   if filesystem_bytes is None:
     filesystem_bytes = board['filesystem']
-  extents, raw = read_uf2(uf2_path)
+  extents, contents = read_uf2(uf2_path)
   failures = []
 
   print('{} for {}'.format(uf2_path, board_name))
@@ -197,7 +205,7 @@ def check(uf2_path, board_name, filesystem_bytes, elf_path):
 
   # Will it run?
   if elf_path:
-    used = static_ram(elf_path)
+    used = static_ram(elf_path, board['ram'])
     free = board['ram'] - used
     print(
         '  ram         {:,} bytes static of {:,}, {:,} left for the'
@@ -211,7 +219,9 @@ def check(uf2_path, board_name, filesystem_bytes, elf_path):
       )
 
   # Is the application actually in there?
-  missing = [m for m in _EXPECTED_FROZEN if m.encode() not in raw]
+  missing = [
+      m for m in _EXPECTED_FROZEN if (m + '.py\0').encode() not in contents
+  ]
   print(
       '  frozen      {} of {} expected modules found'.format(
           len(_EXPECTED_FROZEN) - len(missing), len(_EXPECTED_FROZEN)

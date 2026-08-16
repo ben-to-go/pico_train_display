@@ -40,7 +40,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y cmake gcc-arm-none-eabi \
-          libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib build-essential
+          libnewlib-arm-none-eabi build-essential
     - name: Build Cross-compiler
       run: |
         pushd micropython
