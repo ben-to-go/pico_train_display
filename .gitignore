@@ -4,3 +4,4 @@
 .micropico
 __pycache__/
 .env
+sim/out/
