@@ -22,6 +22,7 @@ import asyncio
 import errno
 import gc
 import json
+import os
 import sys
 import time
 import _thread
@@ -53,7 +54,25 @@ _SETUP_MESSAGE = (
 
 _CONNECT_TIMEOUT = 15
 
+# Written once the configured wifi has actually worked. Its absence means the
+# details in config.json have never connected to anything, which is a typo far
+# more often than it is a network that has been down since the moment they
+# were typed in.
+_WIFI_PROVEN = 'wifi_ok'
+
 gc.collect()
+
+
+class _NeedsSetup(Exception):
+  """The wifi details have never worked, so they are worth asking for again."""
+
+
+def _wifi_has_worked() -> bool:
+  try:
+    open(_WIFI_PROVEN).close()
+    return True
+  except OSError:
+    return False
 
 
 def _connect(
@@ -174,6 +193,15 @@ def run(config: config_module.Config):
     gc.threshold(gc.mem_free() // 4 + gc.mem_alloc())
 
     wlan = _connect(config.wifi.ssid, config.wifi.password, screen=screen)
+    if wlan is None and not _wifi_has_worked():
+      # Never having connected is different from having stopped connecting.
+      # The first is a password that was typed in wrong a minute ago and can
+      # be fixed by asking again; the second is a network that is down, which
+      # the board rides out on its baked-in departures.
+      raise _NeedsSetup()
+    if wlan is not None and not _wifi_has_worked():
+      open(_WIFI_PROVEN, 'w').close()
+
     clock_set = _configure_time() if wlan is not None else False
 
     logging.log('Get initial train departures')
@@ -291,6 +319,11 @@ async def setup(screen: display.Display):
     _ = config_module.load(cfg)
     with open('config.json', 'w') as f:
       json.dump(cfg, f)
+    # Whatever has just been typed in has to prove itself.
+    try:
+      os.remove(_WIFI_PROVEN)
+    except OSError:
+      pass
 
   web_server = await server.start(_write_config, event)
   await event.wait()
@@ -298,6 +331,16 @@ async def setup(screen: display.Display):
   screen.fill(0)
   screen.flush()
   await web_server.wait_closed()
+
+
+def _run_setup():
+  """Asks for the settings, writes them, and restarts into them."""
+  screen = display.create()
+  try:
+    asyncio.run(setup(screen))
+    machine.reset()
+  finally:
+    screen.close()
 
 
 def main():
@@ -312,16 +355,16 @@ def main():
     # an unreadable one still counts as a config.
     logging.log('No usable config, starting setup.')
     sys.print_exception(e)
-    screen = display.create()
-    try:
-      asyncio.run(setup(screen))
-      machine.reset()
-    finally:
-      screen.close()
+    _run_setup()
 
   if config.debug.log:
     logging.set_logging_file('debug.txt')
-  run(config)
+
+  try:
+    run(config)
+  except _NeedsSetup:
+    logging.log('Wifi has never worked with these details, asking again.')
+    _run_setup()
 
 
 if __name__ == '__main__':
