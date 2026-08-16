@@ -5,8 +5,7 @@
 __pycache__/
 .env
 sim/out/
-bin/
-artifacts/
+build/
 
-# Firmware images, which act leaves lying about.
+# Firmware images, wherever they end up.
 *.uf2

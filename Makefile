@@ -1,18 +1,20 @@
-# Running this project on a desktop. The firmware itself is built by
-# .github/workflows/build.yml, which is the canonical build.
+# Building and running this project. The workflow calls these same targets, so
+# a green build is one you can reproduce here, and rebuilding after a change to
+# src/ takes seconds rather than a fresh toolchain every time.
 #
 # MICROPYTHON_DIR points at a MicroPython checkout; ~/micropython by default.
 
 MICROPYTHON_DIR ?= $(HOME)/micropython
-# Read out of the workflow, so the pin cannot drift from the firmware's.
-MICROPYTHON_VERSION ?= $(shell sed -n 's|.*refs/tags/\(v[0-9.]*\).*|\1|p' \
-	.github/workflows/build.yml)
+# Pinned so a given tag of this project always builds the same firmware.
+# RP2350, and so the Pico 2 W, needs at least v1.26.
+MICROPYTHON_VERSION ?= v1.28.0
 export MICROPYTHON ?= $(MICROPYTHON_DIR)/ports/unix/build-standard/micropython
 
-ACT ?= ./bin/act
-ACT_VERSION ?= v0.2.89
+BOARD ?= RPI_PICO2_W
+RP2_BUILD = $(MICROPYTHON_DIR)/ports/rp2/build-$(BOARD)
+FIRMWARE = build/pico_train_display_$(BOARD).uf2
 
-.PHONY: sim test sim-depend act-depend unix-port act
+.PHONY: sim test firmware firmware-depend sim-depend unix-port
 
 # Runs main.py against config.json, with the panel drawn in the terminal.
 sim:
@@ -21,16 +23,42 @@ sim:
 test:
 	@python3 -m unittest discover -s tests
 
-# Everything the simulator needs, from nothing. Host tools only: the cross
-# toolchain the firmware needs is build.yml's, and the two are meant to differ.
-sim-depend:
+# The firmware, for one board. Everything the workflow used to spell out, so
+# there is one description of how this project is built rather than two.
+#
+# Incremental: with the checkout and the build directory already there, a
+# change to src/ is a few seconds, which is the point of having it here.
+firmware: | $(MICROPYTHON_DIR)
+	$(MAKE) -C $(MICROPYTHON_DIR)/mpy-cross
+	$(MAKE) -C $(MICROPYTHON_DIR)/ports/rp2 BOARD=$(BOARD) submodules
+	$(MAKE) -C $(MICROPYTHON_DIR)/ports/rp2 -j $(shell nproc) BOARD=$(BOARD) \
+		FROZEN_MANIFEST=$(CURDIR)/manifest.py
+	@python3 tools/check_firmware.py $(RP2_BUILD)/firmware.uf2 \
+		--board $(BOARD) --elf $(RP2_BUILD)/firmware.elf
+	@mkdir -p $(dir $(FIRMWARE))
+	@cp $(RP2_BUILD)/firmware.uf2 $(FIRMWARE)
+	@echo 'Flash this: $(FIRMWARE)'
+
+# The cross toolchain the firmware needs, which is not what the simulator
+# needs: one builds for the board, the other for this machine.
+firmware-depend: | $(MICROPYTHON_DIR)
+	sudo apt-get update
+	sudo apt-get install -y cmake gcc-arm-none-eabi \
+		libnewlib-arm-none-eabi build-essential
+
+# Everything the simulator needs, from nothing. Host tools only.
+sim-depend: | $(MICROPYTHON_DIR)
 	sudo apt-get update
 	sudo apt-get install -y build-essential git pkg-config
-	@test -d $(MICROPYTHON_DIR) || git clone --depth 1 \
-		--branch $(MICROPYTHON_VERSION) \
-		https://github.com/micropython/micropython $(MICROPYTHON_DIR)
 	$(MAKE) -C $(MICROPYTHON_DIR)/ports/unix submodules
 	$(MAKE) unix-port
+
+# The checkout both the firmware and the simulator are built from. A real
+# target, so it is cloned once and then left alone; that checkout and its build
+# directories are the cache that makes rebuilding quick.
+$(MICROPYTHON_DIR):
+	git clone --depth 1 --branch $(MICROPYTHON_VERSION) \
+		https://github.com/micropython/micropython $@
 
 # src/ is MicroPython, not Python, so the simulator needs a MicroPython that
 # runs on a desktop. MICROPY_PY_FFI=0 avoids needing libffi-dev, and the GIL
@@ -41,29 +69,3 @@ unix-port:
 	@$(MAKE) -C $(MICROPYTHON_DIR)/ports/unix clean
 	@$(MAKE) -C $(MICROPYTHON_DIR)/ports/unix \
 		MICROPY_PY_FFI=0 MICROPY_PY_THREAD_GIL=1
-
-# act itself, into bin/. Installing Docker needs decisions about your machine
-# that a make target should not be making, so this only checks for it.
-act-depend:
-	@docker info >/dev/null 2>&1 || { \
-		echo 'act runs the workflow in containers, so it needs Docker:'; \
-		echo '  https://docs.docker.com/engine/install/'; \
-		echo '  sudo usermod -aG docker $$USER   # then log in again'; \
-		exit 1; }
-	@mkdir -p bin
-	curl -sSfL \
-		https://raw.githubusercontent.com/nektos/act/$(ACT_VERSION)/install.sh \
-		| bash -s -- -b bin $(ACT_VERSION)
-
-# Runs .github/workflows/build.yml in containers. The firmware lands zipped
-# under artifacts/, the way the runner uploads it, and is unpacked beside the
-# zips afterwards so the uf2 files are there to flash. That is this target's
-# doing, not the workflow's.
-# The flags are in .actrc, so running act by hand behaves the same. act ignores
-# job-level permissions, so this says nothing about the tag-gated release step.
-act:
-	@$(ACT)
-	@for z in artifacts/*/*/*.zip; do \
-		[ -e "$$z" ] || continue; \
-		unzip -oq "$$z" -d "$$(dirname "$$z")"; \
-	done

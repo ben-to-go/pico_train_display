@@ -27,56 +27,19 @@ jobs:
         board: [RPI_PICO_W, RPI_PICO2_W]
     steps:
     - uses: actions/checkout@v4
-      with:
-        path: main
-    - name: Checkout MicroPython
-      uses: actions/checkout@v4
-      with:
-        repository: micropython/micropython
-        # Pinned so a given tag of this project always builds the same
-        # firmware. RP2350, and so the Pico 2 W, needs at least v1.26.
-        ref: refs/tags/v1.28.0
-        path: micropython
     - name: Install build tools
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y cmake gcc-arm-none-eabi \
-          libnewlib-arm-none-eabi build-essential
-    - name: Build Cross-compiler
-      run: |
-        pushd micropython
-        make -C mpy-cross
-        popd
-    - name: Get MicroPython submodules
-      run: |
-        pushd micropython
-        make -C ports/rp2 BOARD=${{ matrix.board }} submodules
-        popd
-    - name: Build MicroPython with manifest.
-      run: |
-        pushd micropython
-        cd ports/rp2
-        make -j 4 BOARD=${{ matrix.board }} FROZEN_MANIFEST=../../../../main/manifest.py
-        popd
-    - name: Check firmware suits the board
-      run: |
-        pushd micropython/ports/rp2/build-${{ matrix.board }}
-        python3 $GITHUB_WORKSPACE/main/tools/check_firmware.py firmware.uf2 \
-          --board ${{ matrix.board }} --elf firmware.elf
-        popd
-    - name: Rename UF2
-      run: |
-        pushd micropython
-        mv ports/rp2/build-${{ matrix.board }}/firmware.uf2 \
-          ports/rp2/build-${{ matrix.board }}/pico_train_display_${{ matrix.board }}.uf2
-        popd
+      run: make firmware-depend
+    - name: Build firmware
+      # The Makefile is the one description of how this is built, so the same
+      # command here builds the same thing on a laptop, incrementally.
+      run: make firmware BOARD=${{ matrix.board }}
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
         name: pico_train_display_${{ matrix.board }}
-        path: micropython/ports/rp2/build-${{ matrix.board }}/pico_train_display_${{ matrix.board }}.uf2
+        path: build/pico_train_display_${{ matrix.board }}.uf2
     - name: Release
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: micropython/ports/rp2/build-${{ matrix.board }}/pico_train_display_${{ matrix.board }}.uf2
+        files: build/pico_train_display_${{ matrix.board }}.uf2
