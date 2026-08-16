@@ -67,6 +67,33 @@ class RateLimitError(ValueError):
     self.retry_after = retry_after
 
 
+# Long enough that a night-long outage costs a handful of requests, short
+# enough that the board is current again within half an hour of the API
+# coming back.
+_MAX_BACKOFF_SECS = 30 * 60
+
+
+def retry_wait(error, failures_in_a_row: int, interval: int) -> int:
+  """How long to leave it after a failed update.
+
+  A 429 answers this question itself: the API sends the seconds to wait, and
+  they are minutes rather than seconds, so it is used as given.
+
+  Everything else doubles the interval for each failure in a row. That matters
+  more than it looks. Retrying harder is the obvious response to a failure and
+  the wrong one here, because the request budget is small enough that a few
+  retries a cycle can spend it all, leaving nothing for the recovery. Backing
+  off means an outage costs fewer requests than normal running, not more.
+  """
+  if isinstance(error, RateLimitError) and error.retry_after > 0:
+    return max(interval, error.retry_after)
+
+  # One failure waits the usual interval, two waits double, and so on. The
+  # shift is capped before the multiply so the arithmetic cannot run away.
+  doublings = min(max(failures_in_a_row - 1, 0), 10)
+  return min(interval * (1 << doublings), _MAX_BACKOFF_SECS)
+
+
 def _to_hhmm(timestamp: str) -> int:
   """'2026-08-15T18:30:00' -> 1830."""
   return int(timestamp[11:13] + timestamp[14:16])
