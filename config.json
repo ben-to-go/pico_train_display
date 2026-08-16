@@ -11,10 +11,11 @@
     "update_interval": 20
   },
   "display": {
-    "refresh": 30,
+    "refresh": 60,
     "type": "ssd1322",
     "flip": false,
-    "active_time": ""
+    "active_time": "",
+    "scroll_speed": 60
   },
   "debug": {
     "log": false

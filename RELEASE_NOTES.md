@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- The board renders at 60Hz, and the calling points scroll at a fixed speed.
+
+  Scrolling used to advance a fixed number of pixels per frame, so it ran at
+  whatever pace the refresh rate happened to give it. It is now its own
+  setting, `display.scroll_speed`, in pixels a second and measured against the
+  clock, so the two can be changed without disturbing each other.
+
 - The board is laid out like a real platform indicator.
 
   Four rows: the next train, the stations it calls at scrolling along the
