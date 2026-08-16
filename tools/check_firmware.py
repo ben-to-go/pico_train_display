@@ -28,7 +28,7 @@ Nothing here needs a device. It reads the .uf2 the build produced, and the
                        flashing eats the saved config
   will it run          static RAM has to leave room for MicroPython's heap
 
-  tools/check_firmware.py firmware.uf2 --board RPI_PICO_W --elf firmware.elf
+  tools/check_firmware.py firmware.uf2 --board RPI_PICO2_W --elf firmware.elf
 """
 
 import argparse
@@ -45,10 +45,7 @@ _UF2_BLOCK = 512
 _NOT_MAIN_FLASH = 0x00001000
 
 # Flash is memory mapped for execute-in-place at 0x10000000, and SRAM begins
-# at 0x20000000, on both chips.
-# RP2040 datasheet 2.2 (SRAM) and 2.6.3 (XIP):
-# https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf
-# RP2350 datasheet 4.2 and 4.4:
+# at 0x20000000. RP2350 datasheet 4.2 and 4.4:
 # https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf
 _FLASH_BASE = 0x10000000
 _SRAM_BASE = 0x20000000
@@ -60,15 +57,8 @@ _SRAM_BASE = 0x20000000
 # https://github.com/microsoft/uf2/blob/master/utils/uf2families.json
 #
 # Flash is the chip Raspberry Pi fit to the board, and SRAM is the die:
-# https://datasheets.raspberrypi.com/picow/pico-w-datasheet.pdf
 # https://datasheets.raspberrypi.com/picow/pico-2-w-datasheet.pdf
 _BOARDS = {
-    'RPI_PICO_W': {
-        'family': 0xE48BFF56,  # RP2040
-        'flash': 2 * 1024 * 1024,
-        'ram': 264 * 1024,
-        'filesystem': 848 * 1024,
-    },
     'RPI_PICO2_W': {
         'family': 0xE48BFF59,  # RP2350, Arm secure
         'flash': 4 * 1024 * 1024,

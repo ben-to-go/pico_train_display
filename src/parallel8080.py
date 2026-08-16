@@ -40,13 +40,10 @@ import time
 import logging
 
 
-# SIO, where the RP2 keeps its GPIO output register.
-#
-# Deliberately GPIO_OUT rather than the atomic GPIO_OUT_SET alias. SET is at
-# +0x14 on RP2040 but +0x18 on RP2350, where +0x14 is GPIO_HI_OUT instead, so
-# an alias hardcoded for one board writes nowhere on the other. GPIO_OUT is at
-# +0x10 on both, and read-modify-write is safe here because the render thread
-# is the only thing driving these lines.
+# SIO, where the RP2350 keeps its GPIO output register. Read-modify-write is
+# safe here, rather than the atomic GPIO_OUT_SET alias, because the render
+# thread is the only thing driving these lines. Section 3.1.4:
+# https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf
 _GPIO_OUT = micropython.const(0xD0000010)
 
 # The strobe is GP8, and _blast has that baked in as 0x100 because viper wants
