@@ -102,10 +102,6 @@ class SSD1322(display.Display):
     self.write_cmd(0xAE)
     self.write_cmd(0xAB, 0x00)
 
-  def awake(self):
-    self.write_cmd(0xAB, 0x01)
-    self.write_cmd(0xAF)
-
   def write_cmd(self, cmd, *args):
     self._cmd[0] = cmd
     self._bus.write(self._cmd, 0)
