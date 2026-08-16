@@ -18,7 +18,8 @@ descenders, and the clock, which has none, filling all nine.
 | <img src="https://blog.balena.io/wp-content/uploads/2019/07/hu788k5bih421.jpg" width="380"> | <img src="docs/images/platform_indicator.png" width="380"> |
 
 Both are real: the right-hand board is a genuine Chiltern Railways morning
-from Stoke Mandeville, calling points and all, exactly as the API returned it.
+from Stoke Mandeville, calling points and all, exactly as the API returned it,
+in the amber the panel actually glows.
 
 How that was measured, and what it means for the fonts, is in
 [docs/display-format.md](docs/display-format.md).
