@@ -93,23 +93,18 @@ name, a password and an address.
 ## Changing the settings later
 
 They are kept in a `config.json` in flash, above where the firmware lives, so
-they survive a firmware update. There is no settings page on a running board:
-the setup screen only appears when there is no config at all. So to change
-your wifi, or the station, you have to remove the file.
+they survive a firmware update. There is no settings page on a running board
+either: the setup screen only appears when there is no config at all.
 
-Surgically, with the board plugged into a computer:
+So to change your wifi or your station, wipe it and set it up again. Hold
+**BOOTSEL**, plug in, and copy two files across in turn:
 
-```sh
-pip install mpremote
-mpremote connect auto fs rm :config.json
-```
+1. [`flash_nuke.uf2`](https://datasheets.raspberrypi.com/soft/flash_nuke.uf2),
+   which erases the lot. It works on either board.
+2. [`pico_train_display_RPI_PICO2_W.uf2`](https://github.com/ben-to-go/pico_train_display/releases/latest/download/pico_train_display_RPI_PICO2_W.uf2)
+   again, from the latest release.
 
-Or by wiping the flash and starting over: hold BOOTSEL, plug in, and copy
-[flash_nuke.uf2](https://datasheets.raspberrypi.com/soft/flash_nuke.uf2)
-across, then the firmware again. The same file works on both boards, because
-alongside its RP2040 blocks it carries a set marked
-[`RP2XXX_ABSOLUTE`](https://github.com/microsoft/uf2/blob/master/utils/uf2families.json),
-which every Raspberry Pi bootloader accepts.
+The setup screen comes back.
 
 ## If nothing appears
 
@@ -119,5 +114,5 @@ which every Raspberry Pi bootloader accepts.
 - **Noise or a partial picture.** Check pin 12 (`RD#`) really is at 3V3. A
   floating one lets the panel fight the Pico for the data bus.
 - **Wifi name never appears.** The panel is working if you see anything at
-  all, so the problem is later: plug into a computer and read the log with
-  `mpremote connect auto`.
+  all, so the wiring is fine and the problem is later. Plug it into a computer
+  and read the serial output, which says what it was doing.
