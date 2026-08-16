@@ -32,15 +32,53 @@ chain from wherever it broke:
 1. **Is wifi up?** `wlan is None or not wlan.isconnected()` → try to join again,
    quietly, without disturbing what is on the panel.
 2. **Is the clock set?** If wifi is up and NTP never answered, try again.
-3. **Fetch departures**, up to `_MAX_ATTEMPTS` (3) times.
+3. **Fetch departures**, once.
    - `ECONNABORTED` mid-request means the connection dropped while still
      associated, which the check in step 1 would not catch, so that one
-     reassociates before retrying.
-   - Any other failure just retries.
-4. **Sleep**, and go round again.
+     reassociates before the next cycle.
+4. **Sleep**, for the interval if that worked and for longer if it did not.
+   See [the rate limit](#the-rate-limit).
 
-Nothing in here raises. Three failed attempts is not an error, it is a cycle
-where the board carried on showing what it already had.
+Nothing in here raises. A failed fetch is not an error, it is a cycle where the
+board carried on showing what it already had.
+
+One request a cycle, and no retrying inside one. Retrying is the obvious
+response to a failure and the wrong one here, because the request budget is
+small enough that a few retries a cycle can spend it all and leave nothing for
+the recovery.
+
+## The rate limit
+
+The API counts requests per minute, hour, day and week, and this account gets
+**10 a minute and 100 an hour, 1000 a day**. Over any of them it answers 429
+with a `Retry-After` of minutes rather than seconds.
+
+Each update costs one request, plus one more whenever the train at the top of
+the board changes and its calling points have to be fetched, plus two every
+twenty minutes when the access token expires and has to be exchanged again.
+
+Counted through the real update path, by `tests/test_rate_limit.py`:
+
+| `update_interval` | an hour | a day | a week | |
+|---|---|---|---|---|
+| 20s | 182 | 4,322 | 30,242 | over all three |
+| 60s | 62 | 1,442 | 10,082 | over the daily and weekly |
+| 90s | 42 | 962 | 6,722 | inside, barely |
+| **120s** | **32** | **722** | **5,042** | the default |
+
+The daily allowance is what sets the pace, and departures do not change fast
+enough for anything quicker to be worth it.
+
+## Backing off
+
+After a failed update the board waits longer than usual, and longer again for
+each failure in a row, up to half an hour. A 429 skips that: the API sends the
+seconds to wait and they are used as given.
+
+The point is that **an outage costs fewer requests than working does**, so a
+bad patch cannot spend the budget the recovery needs. Measured over an hour,
+again by the tests: 32 requests while healthy, 5 while the API is down, 3
+while rate limited.
 
 ## The baked-in board
 
