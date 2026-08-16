@@ -71,14 +71,26 @@ enough for anything quicker to be worth it.
 
 ## Backing off
 
-After a failed update the board waits longer than usual, and longer again for
-each failure in a row, up to half an hour. A 429 skips that: the API sends the
-seconds to wait and they are used as given.
+There is no retry loop. A failure just brings the next go forward, by less or
+more depending on how many have failed in a row:
 
-The point is that **an outage costs fewer requests than working does**, so a
-bad patch cannot spend the budget the recovery needs. Measured over an hour,
-again by the tests: 32 requests while healthy, 5 while the API is down, 3
-while rate limited.
+| failures in a row | wait |
+|---|---|
+| 1 | 1s |
+| 2 | 5s |
+| 3 | 30s |
+| 4 | 120s |
+| 5 | 600s |
+| 6 and after | 1800s |
+
+So a blip costs one extra request and a second of staleness, while something
+properly broken is asked about less and less. A 429 is not on this ladder at
+all: the API sends the seconds to wait, and never less than the interval.
+
+The point is that **failing costs fewer requests than working does**, so a bad
+patch cannot spend the budget the recovery needs. Measured over an hour by
+`tests/test_rate_limit.py`: 32 requests while healthy, 7 while the API is
+down, 3 while rate limited.
 
 ## The baked-in board
 

@@ -252,9 +252,10 @@ def run(config: config_module.Config):
       if wlan is not None and not clock_set:
         clock_set = _configure_time()
 
-      # One request a cycle. Retrying inside a cycle spends the request budget
-      # exactly when the API is least willing to serve it, so a failure buys
-      # time instead: see trains.retry_wait.
+      # One request a go, and a failure just brings the next go forward: a
+      # second or two for a blip, longer each time it keeps failing. There is
+      # no separate retry loop, because retrying is the same thing as going
+      # round again sooner. trains.retry_wait decides how much sooner.
       try:
         departure_updater.update()
         gc.collect()

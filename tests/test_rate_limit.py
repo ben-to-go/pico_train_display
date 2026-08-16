@@ -87,21 +87,25 @@ class RetryWaitTest(unittest.TestCase):
     # board up in response to being told to slow down.
     self.assertEqual(120, trains.retry_wait(trains.RateLimitError(30), 1, 120))
 
-  def test_a_rate_limit_with_no_header_backs_off_anyway(self):
-    # Being limited is reason enough to wait, even with nothing to go on.
+  def test_a_rate_limit_with_no_header_never_gets_the_blip_treatment(self):
+    # Being limited is reason enough to wait the usual interval, and asking
+    # again in a second is the one thing that must not happen.
     self.assertEqual(120, trains.retry_wait(trains.RateLimitError(0), 1, 120))
-    self.assertEqual(240, trains.retry_wait(trains.RateLimitError(0), 2, 120))
 
-  def test_other_failures_double_each_time_up_to_the_cap(self):
-    waits = [trains.retry_wait(OSError('down'), n, 120) for n in range(1, 6)]
-    # 1920 would be next, but the cap lands first.
-    self.assertEqual([120, 240, 480, 960, trains._MAX_BACKOFF_SECS], waits)
+  def test_a_blip_is_retried_almost_straight_away(self):
+    # The first failure is usually nothing: a dropped packet, a slow server.
+    # Waiting the full interval over one of those is two minutes of stale
+    # board for no reason.
+    self.assertEqual(1, trains.retry_wait(OSError('blip'), 1, 120))
+    self.assertEqual(5, trains.retry_wait(OSError('blip'), 2, 120))
 
-  def test_the_wait_is_capped(self):
-    # A board left overnight should still notice the API within the hour.
-    self.assertEqual(
-        trains._MAX_BACKOFF_SECS, trains.retry_wait(OSError('down'), 40, 120)
-    )
+  def test_it_stretches_out_as_the_failures_stack_up(self):
+    waits = [trains.retry_wait(OSError('down'), n, 120) for n in range(1, 8)]
+    self.assertEqual([1, 5, 30, 120, 600, 1800, 1800], waits)
+
+  def test_the_wait_stops_growing(self):
+    # A board left overnight should still notice the API within half an hour.
+    self.assertEqual(1800, trains.retry_wait(OSError('down'), 500, 120))
 
 
 
