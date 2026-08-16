@@ -333,6 +333,7 @@ def main():
     logging.log('No usable config, starting setup.')
     sys.print_exception(e)
     _run_setup()
+    return
 
   if config.debug.log:
     logging.set_logging_file('debug.txt')
