@@ -22,7 +22,9 @@ from Stoke Mandeville, calling points and all, exactly as the API returned it,
 in the amber the panel actually glows.
 
 How that was measured, and what it means for the fonts, is in
-[docs/display-format.md](docs/display-format.md).
+[docs/display-format.md](docs/display-format.md). What the board does when the
+wifi, the clock or the API give out is in
+[docs/fallback.md](docs/fallback.md).
 
 ## Introduction
 
