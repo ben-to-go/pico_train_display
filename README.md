@@ -3,6 +3,12 @@
 The board from the platform, on your shelf. It shows the next trains from your
 station to the one you actually travel to, and nothing else.
 
+A MicroPython-based application for displaying near-realtime UK railway
+departure times. It runs on a
+[Raspberry Pi Pico 2 W](https://www.raspberrypi.com/products/raspberry-pi-pico-2/)
+microcontroller, with an SSD1322-based 256x64 OLED display, driven over its
+8080 8-bit parallel interface.
+
 | A real platform indicator | This display |
 |---|---|
 | <img src="https://blog.balena.io/wp-content/uploads/2019/07/hu788k5bih421.jpg" width="380"> | <img src="docs/images/platform_indicator.png" width="380"> |
