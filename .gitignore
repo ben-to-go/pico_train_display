@@ -9,3 +9,8 @@ build/
 
 # Firmware images, wherever they end up.
 *.uf2
+
+# Left over from act, which this project no longer uses. Ignored rather than
+# removed, so an old checkout does not keep offering them up to be committed.
+bin/
+artifacts/
