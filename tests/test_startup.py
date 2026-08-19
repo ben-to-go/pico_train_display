@@ -216,6 +216,7 @@ class RequestsAtStartupTest(unittest.TestCase):
 
     self.updates = 0
     self.slept = 0
+    self.order = []
     test = self
 
     class _Updater:
@@ -225,11 +226,16 @@ class RequestsAtStartupTest(unittest.TestCase):
 
       def update(self):
         test.updates += 1
+        test.order.append('fetch')
         if test.updates == 2:
           raise _Stop()
 
     def sleep(seconds):
       test.slept += seconds
+      test.order.append('wait')
+
+    def send():
+      test.order.append('send')
 
     real_lock = _thread_module.allocate_lock
     main.gc = types.SimpleNamespace(
@@ -247,7 +253,7 @@ class RequestsAtStartupTest(unittest.TestCase):
         DEFAULT_FONT=object(), CLOCK_FONT=object())
     main.trains = types.SimpleNamespace(
         DepartureUpdater=_Updater, retry_wait=lambda e, n, interval: 1)
-    main.otel = types.SimpleNamespace(send=lambda: None, install=lambda c: None)
+    main.otel = types.SimpleNamespace(send=send, install=lambda c: None)
     main.time = types.SimpleNamespace(sleep=sleep)
     main._thread = types.SimpleNamespace(
         allocate_lock=real_lock, start_new_thread=lambda *a, **k: None)
@@ -266,6 +272,26 @@ class RequestsAtStartupTest(unittest.TestCase):
     self.assertEqual(2, self.updates, 'stopped on the second, by design')
     self.assertEqual(120, self.slept,
                      'a full interval between the two, not a few seconds')
+
+  def test_the_boot_is_shipped_before_the_first_wait(self):
+    # The reason this loop waits first at all is to save a request, and the
+    # send used to sit after the update at the bottom. Left there it ships
+    # nothing for a whole interval, so a display switched on and watched looks
+    # like one that is not shipping at all, and one that resets inside that
+    # interval takes the reason down with it.
+    self._run()
+
+    self.assertLess(self.order.index('send'), self.order.index('wait'),
+                    self.order[:4])
+
+  def test_the_boot_is_shipped_after_the_board_it_describes(self):
+    # The other side of it: sending before the startup fetch would leave its
+    # three requests and whatever they said for the go round after.
+    self._run()
+
+    self.assertEqual(['fetch', 'send', 'wait', 'fetch'],
+                     [step for i, step in enumerate(self.order)
+                      if i == 0 or step != self.order[i - 1]])
 
   def test_a_failed_first_board_is_retried_like_any_other_failure(self):
     # The other direction: waiting first must not turn a blip at startup into
@@ -287,5 +313,6 @@ class RequestsAtStartupTest(unittest.TestCase):
         DepartureUpdater=_FailsFirst, retry_wait=lambda e, n, interval: 1)
 
     self._run()
+
 
     self.assertEqual(1, self.slept, 'the backoff, not the whole interval')

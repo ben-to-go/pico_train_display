@@ -239,6 +239,12 @@ def run(config: config_module.Config):
 
     logging.log('Start updating departures every {} seconds', update_interval)
     while True:
+      # Before the wait, not after the update below, because the wait comes
+      # first now: everything logged so far is either the boot or the update
+      # at the bottom of the last go round, and a display that resets during
+      # a wait would otherwise take the reason down with it.
+      otel.send()
+
       # The wait comes first, because the board on the panel has just been
       # fetched: above on the first go round, and at the bottom of this loop
       # on every one after. Waiting at the end instead spent a second request
@@ -283,10 +289,6 @@ def run(config: config_module.Config):
         )
         logging.exception(e)
 
-      # Once a cycle, on the connection that has just been used or just
-      # failed. Nothing is sent from the logging call itself: that happens on
-      # both cores and inside every failure path here.
-      otel.send()
   finally:
     logging.log('Main thread closing...')
     main_running.release()
