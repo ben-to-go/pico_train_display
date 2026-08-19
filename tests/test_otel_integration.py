@@ -154,12 +154,16 @@ class LogPushTest(unittest.TestCase):
     self.assertEqual('application/json', headers['Content-Type'])
     # The %20 undone, which is a 401 at Grafana if it reaches the wire.
     self.assertEqual(_AUTH, headers['Authorization'])
+    attributes = sent['resourceLogs'][0]['resource']['attributes']
     self.assertEqual(
         [{'key': 'service.name',
           'value': {'stringValue': 'pico-train-display'}},
          {'key': 'deployment.environment.name',
           'value': {'stringValue': 'simulator'}}],
-        sent['resourceLogs'][0]['resource']['attributes'])
+        attributes[:2])
+    # Whatever this run happened to be given, which the test cannot know.
+    self.assertEqual('service.instance.id', attributes[2]['key'])
+    self.assertEqual(8, len(attributes[2]['value']['stringValue']))
 
   def test_it_carries_the_lines_and_the_traceback(self):
     self._run_firmware()

@@ -146,6 +146,19 @@ class BatchTest(_SinkTestCase):
                       'value': {'stringValue': 'pico-train-display'}},
                      attributes[0])
 
+  def test_says_which_run_of_the_firmware_it_is(self):
+    # A board has no clock until NTP answers and no name of its own, so
+    # without this every boot looks like the one before it and a board that
+    # reset in the night reads as one that ran through.
+    collector = self.collector()
+    self.sink.write('a line')
+    self.sink.send()
+
+    attributes = collector.sent()['resourceLogs'][0]['resource']['attributes']
+    self.assertEqual({'key': 'service.instance.id',
+                      'value': {'stringValue': otel.RUN_ID}},
+                     attributes[2])
+
   def test_says_whether_it_is_the_board_or_the_simulator(self):
     # The two send the same lines to the same place, so without this a board
     # being debugged on a laptop reads exactly like the one on the wall.
@@ -157,6 +170,19 @@ class BatchTest(_SinkTestCase):
     self.assertEqual({'key': 'deployment.environment.name',
                       'value': {'stringValue': 'simulator'}},
                      attributes[1], 'these tests are not a Pico')
+
+  def test_a_run_id_is_eight_hex_characters(self):
+    run_id = otel._new_run_id()
+    self.assertEqual(8, len(run_id), run_id)
+    self.assertEqual(run_id, run_id.lower())
+    int(run_id, 16)  # Raises if it is not hex.
+
+  def test_every_run_gets_its_own(self):
+    # Not the clock, which reads the same at every boot until NTP has been,
+    # and not machine.unique_id(), which is the board rather than the run.
+    ids = {otel._new_run_id() for _ in range(50)}
+
+    self.assertEqual(50, len(ids), 'ids repeated within one run')
 
   def test_the_board_is_what_reports_rp2(self):
     self.assertEqual('device', otel._environment('rp2'))
