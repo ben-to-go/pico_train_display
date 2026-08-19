@@ -84,6 +84,19 @@ def _time_to_str(hh_mm: int) -> str:
   return '{:0>2}:{:0>2}'.format(hh, mm)
 
 
+def _status(departure) -> str:
+  """The three words a departure board has for a train.
+
+  Cancelled first, because a cancelled train can carry a forecast too and it
+  is not what anyone standing on the platform needs told.
+  """
+  if departure.cancelled:
+    return 'Cancelled'
+  if departure.departure_time != departure.actual_departure_time:
+    return 'Exp {}'.format(_time_to_str(departure.actual_departure_time))
+  return 'On time'
+
+
 class Widget:
   """Base class for all Widgets"""
 
@@ -338,12 +351,7 @@ class DepartureWidget(Widget):
     )
     x += self._max_clock_width + _COLUMN_GAP
 
-    if departure.cancelled:
-      status = 'Cancelled'
-    elif departure.departure_time != departure.actual_departure_time:
-      status = 'Exp {}'.format(_time_to_str(departure.actual_departure_time))
-    else:
-      status = 'On time'
+    status = _status(departure)
     status_w = self._status_font.calculate_bounds(status)[0]
     status_x = w - status_w
 
