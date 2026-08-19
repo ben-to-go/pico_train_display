@@ -132,7 +132,17 @@ stack's OTLP page:
 
 They arrive under `{service_name="pico-train-display"}`, with
 `deployment_environment_name` telling the board apart from the simulator, which
-sends the same log from the same code.
+sends the same log from the same code, and `service_instance_id` naming the
+run: eight hex characters, fixed for as long as the board is powered and new
+after a reset. A display has no clock until NTP answers and no name of its own,
+so without it every boot looks like the one before, and:
+
+```
+{service_name="pico-train-display", service_instance_id="4736a1a7"}
+```
+
+is how you read one night's run rather than all of them at once. A new one
+appearing is a board that restarted, which is worth knowing on its own.
 
 Leave the token blank and nothing is sent and nothing is different. The collector is
 somewhere to read the log, never something the departures wait for: one that

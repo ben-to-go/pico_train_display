@@ -36,6 +36,7 @@ few lines a minute.
 """
 
 import json
+import os
 import sys
 import time
 
@@ -86,6 +87,30 @@ SIMULATOR = 'simulator'
 _ENVIRONMENT_KEY = 'deployment.environment.name'
 ENVIRONMENT = _environment(sys.platform)
 
+
+def _new_run_id() -> str:
+  """Eight hex characters, different every time the firmware starts.
+
+  A display has no clock until NTP answers and no name of its own, so there is
+  nothing about a board that says which of its runs a line came from. Every
+  boot looks like the one before it, and a board that reset in the night is
+  indistinguishable in the log from one that ran through.
+
+  From urandom rather than the clock, which reads the same at every boot until
+  NTP has been, or machine.unique_id(), which is the board and so is the same
+  across a power cut. Hex by hand because it is four bytes and that is cheaper
+  than a module.
+  """
+  return ''.join('{:02x}'.format(byte) for byte in os.urandom(4))
+
+
+# Which run of the firmware this is. Grafana promotes it to a Loki label too,
+# so one boot can be selected out of a week of them. It is fixed for as long
+# as the board is powered, and a new one after a reset, whether that reset was
+# the plug or the firmware giving up: both end a run.
+_RUN_KEY = 'service.instance.id'
+RUN_ID = _new_run_id()
+
 # Severity numbers from the OTLP spec, so that a collector can filter on them.
 # The names themselves belong to logging, which is what decides them.
 _SEVERITY_NUMBER = {logging.INFO: 9, logging.ERROR: 17}
@@ -132,6 +157,10 @@ def _payload(lines, now: int) -> str:
                   {
                       'key': _ENVIRONMENT_KEY,
                       'value': {'stringValue': ENVIRONMENT},
+                  },
+                  {
+                      'key': _RUN_KEY,
+                      'value': {'stringValue': RUN_ID},
                   },
               ],
           },
@@ -228,7 +257,7 @@ def install(config) -> Sink | None:
 
   _sink = Sink(config.endpoint, config.auth)
   logging.set_sink(_sink)
-  logging.log('Shipping the log to {}', config.endpoint)
+  logging.log('Shipping the log to {} as run {}', config.endpoint, RUN_ID)
   return _sink
 
 
