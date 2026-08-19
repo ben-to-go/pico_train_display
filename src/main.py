@@ -22,7 +22,6 @@ import asyncio
 import errno
 import gc
 import json
-import sys
 import time
 import _thread
 
@@ -35,6 +34,7 @@ import config as config_module
 import display
 import fonts
 import logging
+import otel
 from setup import server
 import trains
 import utils
@@ -54,6 +54,17 @@ _SETUP_MESSAGE = (
 _CONNECT_TIMEOUT = 15
 
 gc.collect()
+
+
+def _log_memory():
+  """Reports what memory is left, to stdout and to the log.
+
+  mem_info() writes its map straight to stdout, where only a serial cable can
+  read it. The two numbers worth watching from a distance go through the log
+  as well, which is the only route off the display.
+  """
+  micropython.mem_info()
+  logging.log('Memory: {} free, {} allocated', gc.mem_free(), gc.mem_alloc())
 
 
 class _NeedsSetup(Exception):
@@ -98,7 +109,7 @@ def _connect(
     # A rejected password surfaces differently on every port, and the radio
     # itself can refuse to come up. They all mean the same thing here.
     logging.log('Wifi connect failed!')
-    sys.print_exception(e)
+    logging.exception(e)
     return None
 
   logging.log('Failed to connect to wifi in {} secs', _CONNECT_TIMEOUT)
@@ -174,7 +185,7 @@ def run(config: config_module.Config):
         min_departure_time=config.min_departure_time,
     )
     gc.collect()
-    micropython.mem_info()
+    _log_memory()
     gc.threshold(gc.mem_free() // 4 + gc.mem_alloc())
 
     wlan = _connect(config.wifi.ssid, config.wifi.password, screen=screen)
@@ -200,7 +211,7 @@ def run(config: config_module.Config):
       departure_updater.update()
     except Exception as e:
       logging.log('Initial train update failed, using fallback departures.')
-      sys.print_exception(e)
+      logging.exception(e)
     gc.collect()
 
     logging.log('Start render loop')
@@ -248,7 +259,12 @@ def run(config: config_module.Config):
             wait,
             e,
         )
-        sys.print_exception(e)
+        logging.exception(e)
+
+      # Once a cycle, on the connection that has just been used or just
+      # failed. Nothing is sent from the logging call itself: that happens on
+      # both cores and inside every failure path here.
+      otel.send()
 
       for _ in range(wait):
         time.sleep(1)
@@ -331,12 +347,16 @@ def main():
     # loops, because the setup screen only appears when there is no config and
     # an unreadable one still counts as a config.
     logging.log('No usable config, starting setup.')
-    sys.print_exception(e)
+    logging.exception(e)
     _run_setup()
     return
 
   if config.debug.log:
     logging.set_logging_file('debug.txt')
+
+  # Before run(), so that a display which never gets as far as the wifi still
+  # has its side of the story to tell once it does.
+  otel.install(config.otel)
 
   try:
     run(config)
@@ -352,11 +372,14 @@ if __name__ == '__main__':
     logging.log('Keyboard interrupt!')
   except Exception as e:
     logging.log('Unhandled exception!')
-    sys.print_exception(e)
-    micropython.mem_info()
+    logging.exception(e)
+    _log_memory()
     raise e
   finally:
     logging.log('Shutdown')
+    # The last thing a display says is the reason it stopped saying anything,
+    # so it is worth the few seconds before the reset.
+    otel.send()
     logging.on_exit()
 
     # Hard reset device to reset RAM. Although this should be unnecessary,

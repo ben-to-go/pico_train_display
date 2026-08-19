@@ -46,10 +46,10 @@ def _response(status, headers):
 class RateLimitTest(unittest.TestCase):
 
   def setUp(self):
-    self.addCleanup(setattr, trains, '_http_request', trains._http_request)
+    self.addCleanup(setattr, trains, 'http_request', trains.http_request)
 
   def _answer_with(self, response):
-    trains._http_request = lambda *args, **kwargs: response
+    trains.http_request = lambda *args, **kwargs: response
 
   def test_429_carries_the_wait_the_api_asked_for(self):
     self._answer_with(_response(429, {'retry-after': '1550'}))
@@ -132,7 +132,7 @@ class RequestBudgetTest(unittest.TestCase):
   """
 
   def setUp(self):
-    self.addCleanup(setattr, trains, '_http_request', trains._http_request)
+    self.addCleanup(setattr, trains, 'http_request', trains.http_request)
     self.requests = []
 
   def _serve(self, status=200, headers=None):
@@ -148,7 +148,7 @@ class RequestBudgetTest(unittest.TestCase):
         return trains.Response(200, {}, fallback.SERVICE)
       return trains.Response(200, {}, fallback.RESPONSE)
 
-    trains._http_request = request
+    trains.http_request = request
 
   def _run_for(self, seconds, interval=_DEFAULT_INTERVAL):
     """Drives the update loop's policy over a stretch of time."""

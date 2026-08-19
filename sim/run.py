@@ -18,7 +18,6 @@ over the panel, and the setup portal asks for port 80, which needs root.
 """
 
 import sys
-import time
 
 # The setup portal binds port 80, which a normal user may not.
 _SETUP_PORT = 8088
@@ -26,7 +25,13 @@ _LOG_PATH = 'sim/out/firmware.log'
 
 
 def _divert_logging():
-  """Sends the firmware's log to a file, leaving the panel legible."""
+  """Sends the firmware's log to a file, leaving the panel legible.
+
+  Replaces where a line goes rather than logging.log itself, so that
+  everything still passes through the firmware's own logging: a log shipped
+  to a collector from here is the same log, formatted the same way and
+  carrying the same tracebacks, as one shipped from the board.
+  """
   import logging
   import os
 
@@ -36,13 +41,11 @@ def _divert_logging():
     pass
   log_file = open(_LOG_PATH, 'a')
 
-  def log(msg, *args, **kwargs):
-    now = time.localtime()
-    log_file.write('[{:0>2}:{:0>2}:{:0>2}] {}\n'.format(
-        now[3], now[4], now[5], str(msg).format(*args, **kwargs)))
+  def write(msg):
+    log_file.write(msg + '\n')
     log_file.flush()
 
-  logging.log = log
+  logging._write = write
 
 
 def main():

@@ -90,6 +90,8 @@ name, a password and an address.
    `MYB`.
 4. Save. It restarts and the board appears.
 
+The last two fields, under **Advanced**, are optional and covered below.
+
 ## Changing the settings later
 
 They are kept in a `config.json` in flash, above where the firmware lives, so
@@ -111,6 +113,37 @@ across in turn:
 
 The setup screen comes back.
 
+## Reading the log from somewhere else
+
+A display on a wall is a display you cannot see the log of, and the log is the
+only thing that says why a board is showing yesterday's departures. Fill in the
+two collector fields on the setup page and every line it logs is sent to an
+OpenTelemetry collector as well as to the serial port, tracebacks included.
+
+For [Grafana Cloud](https://grafana.com/products/cloud/), both come off your
+stack's OTLP page:
+
+- **Log collector token** is the whole `Basic ...` value from the
+  `Authorization` header it shows you. If it is written with a `%20` in it,
+  that is the space, and the board copes with it either way. This is the only
+  one you have to fill in.
+- **Log collector URL** comes filled in, and only needs changing if your stack
+  is in another region. It is the endpoint ending in `/otlp`.
+
+They arrive under `{service_name="pico-train-display"}`, with
+`deployment_environment_name` telling the board apart from the simulator, which
+sends the same log from the same code.
+
+Leave the token blank and nothing is sent and nothing is different. The collector is
+somewhere to read the log, never something the departures wait for: one that
+cannot be reached costs a few seconds a fetch and keeps its lines for the next
+go.
+
+The simulator reads the same two settings from `OTEL_EXPORTER_OTLP_ENDPOINT`
+and `OTEL_EXPORTER_OTLP_HEADERS` in a `.env` file, which is the pair of
+variables Grafana hands out, so `sim/run.sh` ships its log without a
+`config.json` entry.
+
 ## If nothing appears
 
 - **Blank panel.** Check 3V3 and GND first, then that all eight data lines are
@@ -120,4 +153,5 @@ The setup screen comes back.
   floating one lets the panel fight the Pico for the data bus.
 - **Wifi name never appears.** The panel is working if you see anything at
   all, so the wiring is fine and the problem is later. Plug it into a computer
-  and read the serial output, which says what it was doing.
+  and read the serial output, which says what it was doing. A board with a
+  collector configured has already sent you the same thing.

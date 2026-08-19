@@ -48,6 +48,79 @@ class RttConfig:
       )
 
 
+def _otel_from_env() -> tuple[str | None, str | None]:
+  """(endpoint, auth) from the standard OTEL_ variables, if they are set.
+
+  The same trick as _token_from_env, and for the same reason: the simulator
+  reads .env, which is where the OpenTelemetry variables Grafana hands out
+  already live. The device has no environment and gets these from
+  config.json instead.
+  """
+  getenv = getattr(os, 'getenv', None)
+  if getenv is None:
+    return None, None
+
+  auth = None
+  # OTEL_EXPORTER_OTLP_HEADERS is 'name=value,name=value'. Only the one
+  # header is any use here, and _normalise_auth tidies up what it says.
+  for header in (getenv('OTEL_EXPORTER_OTLP_HEADERS') or '').split(','):
+    name, _, value = header.partition('=')
+    if name.strip().lower() == 'authorization':
+      auth = value
+  return getenv('OTEL_EXPORTER_OTLP_ENDPOINT'), auth
+
+
+def _normalise_auth(auth: str) -> str:
+  """An Authorization header value, however it was pasted in.
+
+  Grafana shows this as the environment variable wants it, name and all, with
+  the space in 'Basic <token>' written as %20. Pasting that into the setup
+  page is the obvious thing to do, and sends a header the gateway answers with
+  401 "no credentials provided", which says nothing about which of the two
+  ends is wrong. So every way of writing it is accepted: with the name or
+  without, escaped or not, and the token on its own.
+  """
+  auth = auth.strip().replace('%20', ' ')
+  if auth.lower().startswith('authorization'):
+    auth = auth[len('authorization'):].lstrip(' =:')
+  # No space means a token with no scheme in front of it. Basic is the only
+  # one Grafana Cloud issues, and a bearer token would say so itself.
+  if auth and ' ' not in auth:
+    auth = 'Basic ' + auth
+  return auth
+
+
+# Somewhere for the endpoint to point by default, so that turning the log
+# collector on is a matter of pasting one token rather than two settings.
+DEFAULT_OTEL_ENDPOINT = 'https://otlp-gateway-prod-gb-south-1.grafana.net/otlp'
+
+
+class OtelConfig:
+  """Where to send the log, on top of stdout.
+
+  Entirely optional, and off until it has an auth header to send: an endpoint
+  on its own is just an address nothing is posted to.
+  """
+
+  def __init__(self, endpoint: str = '', auth: str = ''):
+    env_endpoint, env_auth = _otel_from_env()
+    # The base OTLP endpoint, without the /v1/logs that otel.py appends.
+    self.endpoint = endpoint or env_endpoint or DEFAULT_OTEL_ENDPOINT
+    # The whole Authorization header value, 'Basic <base64>' for Grafana
+    # Cloud, tidied up so that pasting what the console shows works.
+    self.auth = _normalise_auth(auth or env_auth or '')
+
+  @property
+  def enabled(self) -> bool:
+    return bool(self.endpoint and self.auth)
+
+  def validate(self):
+    # Nothing to check. Either setting may be left out, and leaving one out is
+    # how the log stays on the display, so there is no half-filled state worth
+    # refusing a whole config over.
+    pass
+
+
 class WifiConfig:
   """WiFi configuration."""
 
@@ -108,6 +181,7 @@ class Config:
       display: DisplayConfig,
       min_departure_time: int = 0,
       debug: DebugConfig = DebugConfig(),
+      otel: OtelConfig = OtelConfig(),
   ):
     self.destination = destination
     self.station = station
@@ -116,6 +190,7 @@ class Config:
     self.display = display
     self.min_departure_time = min_departure_time
     self.debug = debug
+    self.otel = otel
     self.validate()
 
   def validate(self):
@@ -132,6 +207,7 @@ class Config:
           f'min_departure_time={self.min_departure_time}'
       )
     self.debug.validate()
+    self.otel.validate()
 
 
 def load(config_json) -> Config:
@@ -145,6 +221,8 @@ def load(config_json) -> Config:
       kwargs[k] = RttConfig(**v)
     elif k == 'debug':
       kwargs[k] = DebugConfig(**v)
+    elif k == 'otel':
+      kwargs[k] = OtelConfig(**v)
     else:
       kwargs[k] = v
   return Config(**kwargs)

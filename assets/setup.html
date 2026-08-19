@@ -126,6 +126,27 @@
       <td><label for="debug[log]:bool">Save debug logs:</label></td>
       <td><input type="checkbox" id="debug[log]:bool" name="debug[log]:bool"></td>
     </tr>
+    <tr>
+      <td colspan=2>
+        Optional: send the log somewhere it can be read without unplugging the
+        display. Paste the Authorization header from your Grafana Cloud
+        stack's OTLP page, and change the URL there if your stack is in
+        another region. Leave the token blank and nothing is sent.
+      </td>
+    </tr>
+    <tr>
+      <td><label for="otel[endpoint]">Log collector URL:</label></td>
+      <td>
+        <input type="text" id="otel[endpoint]" name="otel[endpoint]"
+               value="https://otlp-gateway-prod-gb-south-1.grafana.net/otlp">
+      </td>
+    </tr>
+    <tr>
+      <td><label for="otel[auth]">Log collector token:</label></td>
+      <td>
+        <input type="password" id="otel[auth]" name="otel[auth]" placeholder="Basic ...">
+      </td>
+    </tr>
   </table>
   <br>
   <tr>
