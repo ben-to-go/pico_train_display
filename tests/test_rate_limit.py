@@ -37,6 +37,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import firmware_path  # noqa: E402,F401  see its docstring
 
 import fallback
+import logging
 import trains
 
 
@@ -221,3 +222,51 @@ class RequestBudgetTest(unittest.TestCase):
 
 if __name__ == '__main__':
   unittest.main()
+
+
+class EveryRequestSaysSoTest(unittest.TestCase):
+  """A line per request, which is how the budget above can be counted.
+
+  Every call the firmware makes of the API goes through _get_json, and the
+  ones that used to leave no trace were the ones easiest to forget: the token
+  exchange, the calling points, and any request answered by nothing at all.
+  """
+
+  def setUp(self):
+    self.lines = []
+    self.addCleanup(setattr, logging, '_write', logging._write)
+    self.addCleanup(setattr, trains, 'http_request', trains.http_request)
+    logging._write = self.lines.append
+
+  def _answer_with(self, response):
+    trains.http_request = lambda *args, **kwargs: response
+
+  def test_says_the_url_and_what_came_back(self):
+    self._answer_with(trains.Response(200, {}, b'{}'))
+    trains._get_json('https://data.rtt.io/gb-nr/location?code=SKM', 't',
+                     None, None)
+
+    self.assertEqual(1, len(self.lines), self.lines)
+    self.assertIn('https://data.rtt.io/gb-nr/location?code=SKM', self.lines[0])
+    self.assertIn('200', self.lines[0])
+
+  def test_a_refusal_is_still_a_request(self):
+    # It counts against the hundred an hour the same as any other.
+    self._answer_with(trains.Response(429, {'retry-after': '600'}, b'{}'))
+    with self.assertRaises(trains.RateLimitError):
+      trains._get_json('https://data.rtt.io/gb-nr/location', 't', None, None)
+
+    self.assertTrue(any('429' in line for line in self.lines), self.lines)
+
+  def test_a_request_answered_by_nothing_says_so(self):
+    # The only kind that would otherwise go unmentioned, since there is no
+    # status to report and the exception is caught two frames up.
+    def refuse(*args, **kwargs):
+      raise OSError('no route to host')
+
+    trains.http_request = refuse
+    with self.assertRaises(OSError):
+      trains._get_json('https://data.rtt.io/gb-nr/location', 't', None, None)
+
+    self.assertTrue(any('no route to host' in line for line in self.lines),
+                    self.lines)
