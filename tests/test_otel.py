@@ -221,20 +221,42 @@ class BufferTest(_SinkTestCase):
 class ClockTest(_SinkTestCase):
   """Stamps from before NTP, which a collector would throw away."""
 
-  def test_lines_logged_before_the_clock_was_set_are_kept(self):
+  def _seconds(self, collector):
+    return [int(r['timeUnixNano']) // 10**9 for r in collector.records()]
+
+  def test_the_boot_keeps_its_shape_and_its_place(self):
+    # A Pico has no clock across a power cut: it starts at zero and counts,
+    # so these readings are six seconds of boot and not 1970. Anchoring them
+    # to the first real one puts them where they happened, in order, instead
+    # of in a heap at whenever the display first managed to send.
     collector = self.collector()
-    time.time = lambda: 0.0  # However early the port thinks it booted.
-    self.sink.write('[00:00:00] Starting...')
-    time.time = lambda: _NOW
-    self.sink.write('[12:00:00] Time set to UTC')
+    time.time = lambda: 100.0
+    self.sink.write('Starting...')
+    time.time = lambda: 106.0
+    self.sink.write('Connected!')
+    time.time = lambda: _NOW  # NTP answers.
+    self.sink.write('Time set to UTC')
     self.sink.send()
 
-    self.assertEqual(['[00:00:00] Starting...', '[12:00:00] Time set to UTC'],
+    self.assertEqual(['Starting...', 'Connected!', 'Time set to UTC'],
                      collector.lines())
-    # Stamped with the send instead of a reading from 1970, which is the
-    # difference between keeping the boot and having the batch rejected.
-    self.assertEqual([str(int(_NOW)) + '000000000'] * 2,
-                     [r['timeUnixNano'] for r in collector.records()])
+    self.assertEqual([int(_NOW) - 6, int(_NOW), int(_NOW)],
+                     self._seconds(collector))
+
+  def test_nothing_is_sent_until_there_is_a_clock(self):
+    # There is no stamp a collector would take, and the boot is the most
+    # worth keeping of anything a display logs.
+    collector = self.collector()
+    time.time = lambda: 100.0
+    self.sink.write('Starting...')
+
+    self.assertTrue(self.sink.send())
+    self.assertEqual([], collector.batches)
+
+    time.time = lambda: _NOW
+    self.sink.send()
+    self.assertEqual(['Starting...'], collector.lines())
+    self.assertEqual([int(_NOW)], self._seconds(collector))
 
 
 class FailureTest(_SinkTestCase):
@@ -281,8 +303,17 @@ class CaptureTest(_SinkTestCase):
 
   def test_every_logged_line_reaches_the_sink(self):
     logging.log('Connecting to SSID: {}', 'a-network')
-    self.assertEqual(['Connecting to SSID: a-network'],
-                     [line.split('] ')[-1] for line in self.lines()])
+    self.assertEqual(['Connecting to SSID: a-network'], self.lines())
+
+  def test_the_shipped_line_carries_no_clock_of_its_own(self):
+    # The collector stamps it. A second time beside that one is the board's
+    # clock, which reads 00:00:00 until NTP answers and is only confusing.
+    written = []
+    logging._write = written.append
+    logging.log('Starting...')
+
+    self.assertEqual(['Starting...'], self.lines())
+    self.assertTrue(written[0].endswith('] Starting...'), written)
 
   def test_tracebacks_reach_the_sink_too(self):
     # The whole point: sys.print_exception() writes straight to stdout, where

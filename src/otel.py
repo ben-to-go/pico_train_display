@@ -96,15 +96,24 @@ _sink = None
 def _payload(lines, now: int) -> str:
   """A batch of (when, severity, line) as OTLP/JSON.
 
-  Lines logged before the clock was set are stamped with now instead of their
-  own reading, which is from whenever the port thinks it booted and would be
-  dropped by the collector as far too old. That puts the boot at the moment
-  the display first managed to send, which is close enough and keeps it.
+  Lines logged before NTP answered carry a reading from whenever the port
+  thinks it booted, which a collector drops as far too old: a Pico has no
+  clock across a power cut, so it starts at zero and counts. The spacing
+  between them is still right, so they are anchored to end where the first
+  real reading begins, and the boot lands just before the line that set the
+  clock, in the order it happened. Whichever epoch the port booted at cancels
+  out of the subtraction.
   """
+  before = [when for when, _, _ in lines if when < _CLOCK_IS_SET]
+  real = [when for when, _, _ in lines if when >= _CLOCK_IS_SET]
+  anchor = 0
+  if before:
+    anchor = (min(real) if real else now) - max(before)
+
   records = [
       {
           'timeUnixNano': '{}000000000'.format(
-              when if when >= _CLOCK_IS_SET else now
+              when if when >= _CLOCK_IS_SET else when + anchor
           ),
           'severityText': severity,
           'severityNumber': _SEVERITY_NUMBER[severity],
@@ -170,6 +179,12 @@ class Sink:
     # int(), because time.time() is whole seconds on the board and a float on
     # a desktop, and these are formatted as integers.
     now = int(time.time()) + _EPOCH_OFFSET
+    if now < _CLOCK_IS_SET:
+      # NTP has not answered yet, so nothing here can be stamped with a time
+      # the collector would accept. The boot is the most worth keeping of
+      # anything a display logs, so it waits rather than being thrown away.
+      return True
+
     lines, self._lines = self._lines, []
     try:
       self._post(_payload(lines, now))

@@ -59,9 +59,12 @@ def _write(msg: str):
 def _log_message(prefix: str, msg, *args, **kwargs):
   args = args or []
   kwargs = kwargs or {}
-  msg = '{} {}'.format(prefix, str(msg).format(*args, **kwargs))
-  _write(msg)
+  msg = str(msg).format(*args, **kwargs)
+  _write('{} {}'.format(prefix, msg))
   if _sink is not None:
+    # Without the prefix. Whatever the line is shipped to stamps it, and a
+    # board that has not reached NTP yet would be putting 00:00:00 next to
+    # a perfectly good timestamp from the other end.
     _sink.write(msg)
 
 
