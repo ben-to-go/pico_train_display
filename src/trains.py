@@ -375,29 +375,14 @@ def _lineup_url(endpoint: str, station: str, filter_to: str) -> str:
 
 
 def _get_json(url: str, access_token: str, buffer, ssl_context):
-  """GETs a URL and decodes the JSON body, saying so either way.
-
-  Every request the firmware makes of the API comes through here, and each one
-  says so: the board is allowed a hundred an hour, and counting what it spends
-  meant counting the lines that happened to mention a request rather than the
-  requests. The token travels in a header, so there is nothing in a URL worth
-  keeping out of the log.
-  """
-  try:
-    response = http_request(
-        url,
-        bearer_token=access_token,
-        timeout=_REQUEST_TIMEOUT,
-        buffer=buffer,
-        ssl_context=ssl_context,
-    )
-  except Exception as e:
-    # Answered by nothing at all, which is a request spent the same as any
-    # other and the only kind that would otherwise go unmentioned.
-    logging.log('API GET {} failed: {}', url, e)
-    raise
-
-  logging.log('API GET {} -> {}', url, response.status_code)
+  """GETs a URL and decodes the JSON body."""
+  response = http_request(
+      url,
+      bearer_token=access_token,
+      timeout=_REQUEST_TIMEOUT,
+      buffer=buffer,
+      ssl_context=ssl_context,
+  )
   if response.status_code == 401:
     raise AuthError('Token rejected by API.')
   if response.status_code == 429:
