@@ -211,14 +211,24 @@ def run(config: config_module.Config):
     widget.render()
     screen.flush()
 
+    update_interval = config.rtt.update_interval
+    failures = 0
+
     # Get first set of departures synchonously. A failure here is not fatal:
     # the display falls back to the departures baked into the firmware, and
     # the update loop below keeps trying.
+    #
+    # What it decides is when the loop below first asks for another. A board
+    # that has just arrived is good for the full interval; one that failed
+    # deserves the same quick second go as any other failure.
     try:
       departure_updater.update()
+      wait = update_interval
     except Exception as e:
       logging.log('Initial train update failed, using fallback departures.')
       logging.exception(e)
+      failures = 1
+      wait = trains.retry_wait(e, failures, update_interval)
     gc.collect()
 
     logging.log('Start render loop')
@@ -227,10 +237,15 @@ def run(config: config_module.Config):
         (screen, departure_updater, config, main_running, thread_running),
     )
 
-    update_interval = config.rtt.update_interval
     logging.log('Start updating departures every {} seconds', update_interval)
-    failures = 0
     while True:
+      # The wait comes first, because the board on the panel has just been
+      # fetched: above on the first go round, and at the bottom of this loop
+      # on every one after. Waiting at the end instead spent a second request
+      # on the same board a few seconds after the one that fetched it.
+      for _ in range(wait):
+        time.sleep(1)
+
       # The whole chain, rebuilt from wherever it broke: the aerial first,
       # then the clock, then the API. Any link can be down at any point, and
       # the board keeps showing what it has while they come back.
@@ -272,9 +287,6 @@ def run(config: config_module.Config):
       # failed. Nothing is sent from the logging call itself: that happens on
       # both cores and inside every failure path here.
       otel.send()
-
-      for _ in range(wait):
-        time.sleep(1)
   finally:
     logging.log('Main thread closing...')
     main_running.release()
