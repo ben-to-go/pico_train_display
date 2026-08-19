@@ -38,31 +38,14 @@ import unittest
 
 _ROOT = os.path.join(os.path.dirname(__file__), '..')
 _SRC = os.path.join(_ROOT, 'src')
-sys.path.insert(0, _SRC)
 
-# src/logging.py shadows the standard library's, which unittest has imported
-# by now. Put back in tearDownModule, for whatever runs after this.
-_REPLACED_LOGGING = sys.modules.pop('logging', None)
+sys.path.insert(0, os.path.dirname(__file__))
+import firmware_path  # noqa: E402,F401  see its docstring
 
 import config  # noqa: E402
 import logging  # noqa: E402
 import otel  # noqa: E402
 import trains  # noqa: E402
-
-# MicroPython's sys has this and CPython's does not.
-if not hasattr(sys, 'print_exception'):
-
-  def _print_exception(e, file=None):
-    print('Traceback (most recent call last):\n  {!r}'.format(e), file=file)
-
-  sys.print_exception = _print_exception
-
-
-def tearDownModule():
-  sys.modules.pop('logging', None)
-  if _REPLACED_LOGGING is not None:
-    sys.modules['logging'] = _REPLACED_LOGGING
-
 
 # A clock NTP has been to. A float, as time.time() is on a desktop and in the
 # simulator; the board deals in whole seconds and would not have caught the

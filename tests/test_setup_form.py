@@ -31,7 +31,8 @@ import re
 import sys
 import unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.dirname(__file__))
+import firmware_path  # noqa: E402,F401  see its docstring
 
 import config
 

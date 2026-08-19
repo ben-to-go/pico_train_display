@@ -123,16 +123,23 @@ def _configure_time() -> bool:
   that cannot reach NTP still has a display to draw.
   """
   logging.log('Configure datetime.')
+  last_error = None
   for _ in range(_CONNECT_TIMEOUT):
     try:
       ntptime.settime()
       t = time.localtime()
       logging.log('Time set to UTC {}/{}/{} {}:{}', *t[:5])
       return True
-    except Exception:
+    except Exception as e:
+      # Kept rather than logged, because fifteen of these say no more than
+      # the last one does. Without the clock nothing else is stamped right,
+      # so what stopped it is worth having.
+      last_error = e
       time.sleep(1)
 
-  logging.log('Failed to reach NTP in {} secs', _CONNECT_TIMEOUT)
+  logging.log('Failed to reach NTP in {} secs: {}', _CONNECT_TIMEOUT, last_error)
+  if last_error is not None:
+    logging.exception(last_error)
   return False
 
 
