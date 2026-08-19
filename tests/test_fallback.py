@@ -26,8 +26,10 @@ import os
 import sys
 import unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.dirname(__file__))
+import firmware_path  # noqa: E402,F401  see its docstring
 
+import logging
 import trains
 
 
@@ -195,3 +197,89 @@ class StaleBoardTest(unittest.TestCase):
 
 if __name__ == '__main__':
   unittest.main()
+
+
+class WhySaysSoTest(unittest.TestCase):
+  """Every reason the baked-in board goes up says so in the log.
+
+  The dot in the corner is the only thing on the panel that admits the
+  departures are not current, and one lit dot looks the same whatever lit it.
+  """
+
+  def setUp(self):
+    self.lines = []
+    self.addCleanup(setattr, logging, '_write', logging._write)
+    self.addCleanup(setattr, trains, 'get_departures', trains.get_departures)
+    self.addCleanup(
+        setattr, trains, 'get_access_token', trains.get_access_token
+    )
+    logging._write = self.lines.append
+    trains.get_access_token = lambda *args, **kwargs: 'access-token'
+    self.updater = _updater()
+
+  def _fail_with(self, error):
+    def get_departures(*args, **kwargs):
+      raise error
+    trains.get_departures = get_departures
+
+  def _succeed(self):
+    trains.get_departures = lambda *args, **kwargs: _live_board()
+
+  def _logged(self, fragment):
+    return [line for line in self.lines if fragment in line]
+
+  def test_says_when_nothing_has_ever_loaded(self):
+    self._fail_with(OSError('no route to host'))
+    with self.assertRaises(OSError):
+      self.updater.update()
+
+    self.assertTrue(self.updater.stale())
+    self.assertTrue(self._logged('baked into the firmware'), self.lines)
+
+  def test_says_when_the_board_it_is_showing_has_gone_stale(self):
+    # A different thing to say: there are real departures on the panel, they
+    # are just the ones from last time.
+    self._succeed()
+    self.updater.update()
+    self._fail_with(OSError('no route to host'))
+    with self.assertRaises(OSError):
+      self.updater.update()
+
+    self.assertTrue(self._logged('are now stale'), self.lines)
+    self.assertFalse(self._logged('baked into the firmware'), self.lines)
+
+  def test_says_so_once_rather_than_every_two_minutes(self):
+    self._succeed()
+    self.updater.update()
+    self._fail_with(OSError('no route to host'))
+    for _ in range(3):
+      with self.assertRaises(OSError):
+        self.updater.update()
+
+    self.assertEqual(1, len(self._logged('are now stale')), self.lines)
+
+  def test_says_when_the_departures_are_current_again(self):
+    # Otherwise the log says a display broke and never says it came back.
+    self._succeed()
+    self.updater.update()
+    self._fail_with(OSError('down'))
+    with self.assertRaises(OSError):
+      self.updater.update()
+    self._succeed()
+    self.updater.update()
+
+    self.assertFalse(self.updater.stale())
+    self.assertTrue(self._logged('are current again'), self.lines)
+
+  def test_the_first_board_of_the_day_has_not_recovered_from_anything(self):
+    # An updater starts stale, having nothing to show yet, so the first
+    # success would otherwise announce a recovery that never happened.
+    self._succeed()
+    self.updater.update()
+
+    self.assertFalse(self._logged('are current again'), self.lines)
+
+  def test_says_how_much_of_what_the_api_sent_is_being_shown(self):
+    # An empty board and an API that sent nothing look identical on the panel.
+    trains.fallback_departures()
+    self.assertTrue(self._logged('to show'), self.lines)

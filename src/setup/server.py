@@ -22,6 +22,7 @@ import asyncio
 import json
 import re
 
+import logging
 from setup import content
 
 
@@ -162,11 +163,15 @@ async def _server_request(
   request = await reader.readline()
   try:
     method, uri, _ = request.decode().split()
-  except:
+  except Exception as e:
+    logging.log('Could not read a setup request: {}', request[:60])
+    logging.exception(e)
     await _write_response(
         writer, 500, content='Error parsing request!'.encode('utf8')
     )
     raise
+
+  logging.log('Setup {} {}', method, uri)
 
   request_content = await _read_request(reader)
   if uri == '/':
@@ -176,13 +181,19 @@ async def _server_request(
   elif uri == '/submit' and method == 'POST':
     try:
       callback(request_content)
+      logging.log('Settings accepted, restarting into them.')
       await _write_response(writer, 200)
       close_event.set()
     except ValueError as e:
+      # Something on the form the config would not take, which is the one
+      # thing here the person filling it in can do anything about.
+      logging.log('Rejected the settings: {}', e)
       await _write_response(
           writer, 404, content=str(e).encode('utf8'), content_type='text/plain'
       )
-    except:
+    except Exception as e:
+      logging.log('Could not save the settings.')
+      logging.exception(e)
       await _write_response(writer, 500)
       raise
 

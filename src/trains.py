@@ -34,6 +34,7 @@ import time
 import _thread
 
 import fallback
+import logging
 import utils
 
 
@@ -416,7 +417,8 @@ def parse_departures(response_json, min_departure_time: int = 0) -> Station:
   """
   now = time.mktime(utils.get_uk_time())
   departures = []
-  for service in response_json.get('services') or []:
+  services = response_json.get('services') or []
+  for service in services:
     departure = service['temporalData'].get('departure')
     if departure is None:
       continue  # An arrival, so nothing to show on a departure board.
@@ -448,6 +450,14 @@ def parse_departures(response_json, min_departure_time: int = 0) -> Station:
     )
 
   results = Station(response_json['query']['location']['description'], departures)
+  logging.log(
+      '{} services for {}, {} to show{}',
+      len(services),
+      results.name,
+      len(departures),
+      '' if min_departure_time <= 0
+      else ' (skipping the next {} mins)'.format(min_departure_time),
+  )
   del response_json
   gc.collect()  # Explicitly delete and GC JSON objects.
   return results
@@ -578,20 +588,36 @@ class DepartureUpdater:
         departures = self._get_departures()
       except AuthError:
         # Access tokens are short lived, so get a new one and try once more.
+        logging.log('The API rejected our access token, asking for another.')
         self._access_token = None
         departures = self._get_departures()
     except Exception:
       with self._lock:
+        first_failure = not self._stale
+        never_fetched = not self._fetched
         self._stale = True
-        if not self._fetched:
+        if never_fetched:
           self._departures = fallback_departures()
           self._calling_points = fallback_calling_points(self._station)
+      if never_fetched:
+        logging.log(
+            'Nothing has ever loaded for {}, so the board is the one baked '
+            'into the firmware.', self._station)
+      elif first_failure:
+        logging.log(
+            'Departures for {} are now stale, still showing the last ones '
+            'that loaded.', self._station)
       raise
 
     with self._lock:
+      # Stale and fetched before, so this is a recovery rather than the first
+      # board of the day: an updater starts stale, having nothing to show yet.
+      recovered = self._stale and self._fetched
       self._departures = departures
       self._stale = False
       self._fetched = True
+    if recovered:
+      logging.log('Departures for {} are current again.', self._station)
 
     self._update_calling_points(departures)
 
@@ -616,9 +642,13 @@ class DepartureUpdater:
             buffer=self._memoryview,
             ssl_context=self._ssl_context,
         )
-      except Exception:
+      except Exception as e:
         # Rate limited, or the service went away. The board is still worth
         # showing, just without the calling points.
+        logging.log(
+            'No calling points for service {}, showing the board without '
+            'them: {}', identity, e)
+        logging.exception(e)
         identity = None
 
     with self._lock:
