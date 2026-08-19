@@ -37,6 +37,16 @@ import fallback
 import utils
 
 
+# What connect() reports when the connection is not refused but simply not
+# finished being made, none of which is a failure: the poll that follows is
+# what waits for it either way. EISCONN is in there because MicroPython
+# retries a connect the system interrupted, and by the retry it has succeeded;
+# the simulator provokes this every time, since collecting garbage on the
+# render thread is what does the interrupting. It has no name in MicroPython's
+# errno and no one number across platforms, hence both: 56 on a Mac, 106 on
+# the board.
+_CONNECT_UNDERWAY = (errno.EINPROGRESS, errno.EALREADY, 56, 106)
+
 # Short, because a slow API shouldn't leave the board frozen: give up and show
 # the last board we have instead.
 _REQUEST_TIMEOUT = 5
@@ -138,15 +148,18 @@ class Response:
     )
 
 
-def _http_request(
+def http_request(
     url: str,
     *,
+    method: str = 'GET',
+    body: str | bytes | None = None,
+    headers: dict[str, str] | None = None,
     bearer_token: str | None = None,
     timeout: int | None = None,
     buffer: memoryview | None = None,
     ssl_context: ssl.SSLContext | None = None,
 ) -> Response:
-  """Send HTTP GET request and return Response.
+  """Send an HTTP request and return Response.
 
   This is heavily influenced by urequests.get(), with a couple of modifications:
     - Simplify code by not supporting sending params with GET
@@ -174,7 +187,11 @@ def _http_request(
   s = socket.socket(addr[0], socket.SOCK_STREAM, addr[2])
 
   try:
-    s.connect(addr[-1])
+    try:
+      s.connect(addr[-1])
+    except OSError as e:
+      if e.errno not in _CONNECT_UNDERWAY:
+        raise
 
     p = select.poll()
     p.register(s, select.POLLOUT)
@@ -191,11 +208,22 @@ def _http_request(
       else:
         s = ssl.wrap_socket(s, server_hostname=host)
 
-    s.write('GET /{} HTTP/1.0\r\n'.format(path))
+    if body is not None and not isinstance(body, bytes):
+      body = body.encode('utf-8')
+
+    s.write('{} /{} HTTP/1.0\r\n'.format(method, path))
     s.write('Host: {}\r\n'.format(host))
     if bearer_token is not None:
       s.write('Authorization: Bearer {}\r\n'.format(bearer_token))
+    for name, value in (headers or {}).items():
+      s.write('{}: {}\r\n'.format(name, value))
+    # Length rather than chunked, because the body is already a string in
+    # memory and a server that only speaks HTTP/1.0 would not take chunks.
+    if body is not None:
+      s.write('Content-Length: {}\r\n'.format(len(body)))
     s.write('Connection: close\r\n\r\n')
+    if body is not None:
+      s.write(body)
 
     http_status = s.readline().split(None, 2)
     if len(http_status) < 2:
@@ -204,7 +232,7 @@ def _http_request(
     status = int(http_status[1])
 
     # Parse response headers.
-    headers = {}
+    response_headers = {}
     while True:
       header = s.readline()
       if not header or header == b'\r\n':
@@ -219,7 +247,7 @@ def _http_request(
         k, v = header.split(':', 1)
         # Lowercased, because header names are case insensitive and the only
         # thing that reads one wants to find it whatever the server sent.
-        headers[k.lower()] = v.strip()
+        response_headers[k.lower()] = v.strip()
 
   except Exception:
     # Always close socket on any exception
@@ -228,8 +256,11 @@ def _http_request(
 
   if redirect is not None:
     s.close()
-    _http_request(
+    http_request(
         redirect,
+        method=method,
+        body=body,
+        headers=headers,
         bearer_token=bearer_token,
         timeout=timeout,
         buffer=buffer,
@@ -238,7 +269,7 @@ def _http_request(
 
   try:
     if buffer is not None:
-      content_length = int(headers.get('Content-Length', -1))
+      content_length = int(response_headers.get('Content-Length', -1))
       if content_length > -1 and len(buffer) < content_length:
         raise ValueError(
             'Content length > buffer! Content-length: {} Buffer {}'.format(
@@ -253,7 +284,7 @@ def _http_request(
   finally:
     s.close()
 
-  return Response(status, headers, content)
+  return Response(status, response_headers, content)
 
 
 # TODO: Make this a dataclass when MicroPython supports dataclasses
@@ -344,7 +375,7 @@ def _lineup_url(endpoint: str, station: str, filter_to: str) -> str:
 
 def _get_json(url: str, access_token: str, buffer, ssl_context):
   """GETs a URL and decodes the JSON body."""
-  response = _http_request(
+  response = http_request(
       url,
       bearer_token=access_token,
       timeout=_REQUEST_TIMEOUT,

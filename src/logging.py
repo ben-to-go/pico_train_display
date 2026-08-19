@@ -18,10 +18,17 @@
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """Simple logging library that both logs to screen and file."""
 
+import io
 import os
+import sys
 import time
 
 _logging_file = None
+_sink = None
+
+# What a line is. The sink passes these on to wherever it ships them.
+INFO = 'INFO'
+ERROR = 'ERROR'
 
 
 def set_logging_file(path: str):
@@ -31,17 +38,52 @@ def set_logging_file(path: str):
   os.dupterm(_logging_file)
 
 
+def set_sink(sink):
+  """Also hands every line to sink, which ships them off the display.
+
+  A sink rather than os.dupterm, which would be the obvious way to catch
+  everything printed: the RP2040 has one dupterm slot and set_logging_file()
+  already wants it, and the simulator's MicroPython has no dupterm at all.
+  Tapping the log here works the same on both, and on the simulator it taps
+  the log rather than the panel, which is what stdout is over there.
+  """
+  global _sink
+  _sink = sink
+
+
+def _write(msg: str):
+  """Where a log line ends up. The simulator replaces this."""
+  print(msg)
+
+
 def _log_message(prefix: str, msg, *args, **kwargs):
   args = args or []
   kwargs = kwargs or {}
   msg = '{} {}'.format(prefix, str(msg).format(*args, **kwargs))
-  print(msg)
+  _write(msg)
+  if _sink is not None:
+    _sink.write(msg)
 
 
 def log(msg, *args, **kwargs):
   now = time.localtime()
   prefix = '[{:0>2}:{:0>2}:{:0>2}]'.format(now[3], now[4], now[5])
   _log_message(prefix, msg, *args, **kwargs)
+
+
+def exception(e):
+  """Logs a traceback.
+
+  Replaces bare sys.print_exception() calls, which write straight to stdout
+  and so are invisible to both the sink and the simulator's log file. A
+  traceback is the most useful thing a display ever has to say.
+  """
+  buffer = io.StringIO()
+  sys.print_exception(e, buffer)
+  traceback = buffer.getvalue().rstrip() or repr(e)
+  _write(traceback)
+  if _sink is not None:
+    _sink.write(traceback, ERROR)
 
 
 def on_exit():

@@ -17,5 +17,9 @@
   },
   "debug": {
     "log": false
+  },
+  "otel": {
+    "endpoint": "https://otlp-gateway-prod-gb-south-1.grafana.net/otlp",
+    "auth": ""
   }
 }
