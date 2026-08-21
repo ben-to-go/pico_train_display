@@ -438,6 +438,7 @@ async def setup(screen: display.Display):
   screen.fill(0)
   screen.flush()
   await web_server.wait_closed()
+  ap.active(False)
 
 
 def _run_setup():
