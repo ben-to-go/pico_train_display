@@ -83,3 +83,6 @@ DEFAULT_FONT = Font(assets.dot_matrix_regular, _PALETTE)
 # Digits have no descenders, so the clock can be taller than the rows of
 # text while still sitting inside the same bottom row.
 CLOCK_FONT = Font(assets.dot_matrix_clock, _PALETTE)
+# The clock's seconds: shorter than its hours, but the same double-thickness
+# strokes, which the regular face does not have.
+SECONDS_FONT = Font(assets.dot_matrix_seconds, _PALETTE)

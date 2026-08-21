@@ -83,5 +83,69 @@ class DistributeTest(unittest.TestCase):
     self.assertLessEqual(tops[-1] + rows[-1], 64)
 
 
+class ClockTest(unittest.TestCase):
+  """The clock as the real board draws it: spaced colons, smaller seconds.
+
+  The stub fonts are proportional in the same way the real ones are - a '1'
+  narrower than the rest - because that is what the fixed cell per digit is
+  for. With uniform widths none of this would be visible.
+  """
+
+  class _Screen:
+
+    def __init__(self):
+      self.rects = []
+
+    def fill_rect(self, x, y, w, h, colour):
+      self.rects.append((x, y, w, h, colour))
+
+  class _Font:
+
+    def __init__(self, widths):
+      self.widths = widths
+      self.drawn = []
+
+    def calculate_bounds(self, text):
+      return sum(self.widths.get(c, self.widths['0']) for c in text), 9
+
+    def render_text(self, text, _screen, x, y):
+      self.drawn.append((text, x, y))
+
+  def _render(self):
+    screen = self._Screen()
+    tall = self._Font({'0': 9, '1': 5})
+    small = self._Font({'0': 5, '1': 4})
+    clock = widgets.ClockWidget(screen, tall, small)
+    clock.render((0, 0, 0, 12, 34, 56), 0, 0, *clock.bounds())
+    return screen, tall, small, clock
+
+  def test_the_colon_dots_are_further_apart_than_the_fonts(self):
+    screen, _, _, _ = self._render()
+    # The font's colon has its dots at rows 2 and 5. Anything wider than that
+    # three-row pitch is the spacing this is here for.
+    dots = sorted({y for _, y, w, h, c in screen.rects if c and w == 2})
+    self.assertEqual(2, len(dots))
+    self.assertGreater(dots[1] - dots[0], 3)
+
+  def test_every_digit_gets_the_same_cell_and_sits_in_the_middle_of_it(self):
+    _, tall, _, _ = self._render()
+
+    # Nine apart whatever the digit, and the narrow 1 inset by two rather than
+    # left against the digit before it.
+    self.assertEqual([('1', 2), ('2', 9), ('3', 21), ('4', 30)],
+                     [(text, x) for text, x, _ in tall.drawn])
+
+  def test_the_seconds_use_the_smaller_font_on_the_same_bottom_edge(self):
+    _, _, small, _ = self._render()
+
+    # Two rows down, so its shorter digits end level with the tall ones, and
+    # on the smaller font's own five-pixel cell.
+    self.assertEqual([('5', 42, 2), ('6', 47, 2)], small.drawn)
+
+  def test_the_clock_is_the_same_width_whatever_it_reads(self):
+    _, _, _, clock = self._render()
+    self.assertEqual(52, clock.bounds()[0])
+
+
 if __name__ == '__main__':
   unittest.main()
