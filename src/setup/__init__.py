@@ -18,12 +18,17 @@
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """The setup portal, and how much of it a display needs to ask about."""
 
+import json
+
 import config
 
 # The section of the page holding everything that is not the wifi.
 ADVANCED = 'advanced'
+# The datalist holding scanned Wi-Fi network names.
+SSIDS = 'ssids'
 
 _OPENER = '<script>document.getElementById("{}").open=true</script>'
+_POPULATE_SSIDS = '<script>document.getElementById("{}").innerHTML={}</script>'
 
 
 def open_advanced() -> bytes:
@@ -41,3 +46,16 @@ def open_advanced() -> bytes:
   if config.from_firmware('RTT_TOKEN'):
     return b''
   return _OPENER.format(ADVANCED).encode()
+
+
+def suggest_networks(ssids: list[str]) -> bytes:
+  """Builds a script populating the network name datalist from a scan.
+
+  A datalist offers each seen SSID as a dropdown option on click, while
+  leaving the field a normal text input for hidden networks or one the scan
+  missed.
+  """
+  if not ssids:
+    return b''
+  options = ''.join(f'<option value="{name}">' for name in ssids)
+  return _POPULATE_SSIDS.format(SSIDS, json.dumps(options)).encode()

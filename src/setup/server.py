@@ -158,6 +158,7 @@ async def _write_response(
 async def _server_request(
     close_event: asyncio.Event,
     callback,
+    ssids: list[str],
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
 ):
@@ -176,10 +177,13 @@ async def _server_request(
 
   request_content = await _read_request(reader)
   if uri == '/':
-    page = content.data()
+    page = bytes(content.data())
     opener = setup.open_advanced()
     if opener:
-      page = bytes(page) + opener
+      page = page + opener
+    suggestions = setup.suggest_networks(ssids)
+    if suggestions:
+      page = page + suggestions
     await _write_response(
         writer, 200, content=page, content_type='text/html'
     )
@@ -203,7 +207,13 @@ async def _server_request(
       raise
 
 
-async def start(callback, event: asyncio.Event) -> asyncio.Server:
+async def start(
+    callback, event: asyncio.Event, ssids: list[str] | None = None
+) -> asyncio.Server:
   # TODO: Use functools.partial when supported in MicroPython.
-  func = lambda reader, writer: _server_request(event, callback, reader, writer)
+  func = (
+      lambda reader, writer: _server_request(
+          event, callback, ssids or [], reader, writer
+      )
+  )
   return await asyncio.start_server(func, '0.0.0.0', 80)
