@@ -480,11 +480,18 @@ async def setup(screen: display.Display):
 
   web_server = await server.start(_write_config, event, ssids=ssids)
   await event.wait()
+
+  # Give the 200 OK HTTP response a moment to flush to the client browser
+  await asyncio.sleep_ms(500)
+
   web_server.close()
   screen.fill(0)
   screen.flush()
   await web_server.wait_closed()
+
+  # Tear down the access point and pause so the client disassociates cleanly
   ap.active(False)
+  time.sleep(1)
 
 
 def _run_setup():
