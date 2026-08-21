@@ -226,7 +226,6 @@ def _render_thread(
         departure_updater,
         fonts.DEFAULT_FONT,
         fonts.CLOCK_FONT,
-        scroll_speed=config.display.scroll_speed,
     )
     refresh_rate_us = int((1 / config.display.refresh) / 1e-6)
     screen.fill(0)

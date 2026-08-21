@@ -36,10 +36,14 @@ _ELLIPSIS = '..'
 _COLUMN_GAP = 4
 
 # The blank run between the end of the calling points and the start of them
-# coming round again. How fast they move is display.scroll_speed, in pixels a
-# second rather than per frame, so the refresh rate can change without the
-# stations suddenly reading at a different pace.
+# coming round again.
 _SCROLL_GAP = 24
+
+# How fast they move, in pixels a second rather than per frame, so the refresh
+# rate can change without the stations reading at a different pace. Not a
+# setting: config.json lives in flash, so a number there could never be
+# changed by changing this project.
+_SCROLL_PIXELS_PER_SECOND = 12
 
 # How long each of the later departures gets on the third line.
 _ALTERNATE_SECONDS = 8
@@ -176,7 +180,7 @@ class ScrollingTextWidget(Widget):
       screen: display.Display,
       font: fonts.Font,
       label: str = '',
-      pixels_per_second: int = 60,
+      pixels_per_second: int = _SCROLL_PIXELS_PER_SECOND,
   ):
     super().__init__(screen)
     self._font = font
@@ -375,7 +379,6 @@ class MainWidget(Widget):
       departure_updater: trains.DepartureUpdater,
       font: fonts.Font,
       clock_font: fonts.Font,
-      scroll_speed: int = 60,
   ):
     super().__init__(screen)
     self._departure_updater = departure_updater
@@ -384,9 +387,7 @@ class MainWidget(Widget):
     # and leaves two for descenders; the clock, having none, fills all nine.
     self._clock_widget = ClockWidget(screen, clock_font)
     self._no_departures_widget = NoDeparturesWidget(screen, font)
-    self._calling_at_widget = ScrollingTextWidget(
-        screen, font, _CALLING_AT, scroll_speed
-    )
+    self._calling_at_widget = ScrollingTextWidget(screen, font, _CALLING_AT)
     self._first_widget = DepartureWidget(screen, font, screen.width)
     self._later_widget = DepartureWidget(screen, font, screen.width)
 

@@ -12,8 +12,7 @@
   },
   "display": {
     "refresh": 60,
-    "flip": false,
-    "scroll_speed": 15
+    "flip": false
   },
   "debug": {
     "log": false
