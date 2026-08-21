@@ -177,6 +177,15 @@ def _connect(
         logging.log(wlan.ifconfig())
         return wlan
 
+      if wlan.status() < 0:
+        logging.log('Wifi status={}, retrying...', wlan.status())
+        try:
+          wlan.disconnect()
+        except Exception:
+          pass
+        time.sleep_ms(200)
+        wlan.connect(ssid, password if password else None)
+
       if widget is not None:
         widget.render('{}{}'.format(_WIFI_CONNECT, '.' * (i % 4)))
         screen.flush()
