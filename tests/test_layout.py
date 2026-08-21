@@ -83,5 +83,15 @@ class DistributeTest(unittest.TestCase):
     self.assertLessEqual(tops[-1] + rows[-1], 64)
 
 
+class ScrollPaceTest(unittest.TestCase):
+
+  def test_the_widget_scrolls_at_the_constant_and_it_is_slower_than_15(self):
+    # 15 came from config.json before this. A constant nothing reads would
+    # leave the old pace in place and look like a change.
+    self.assertEqual(widgets._SCROLL_PIXELS_PER_SECOND,
+                     widgets.ScrollingTextWidget.__init__.__defaults__[-1])
+    self.assertLessEqual(widgets._SCROLL_PIXELS_PER_SECOND, 12)
+
+
 if __name__ == '__main__':
   unittest.main()

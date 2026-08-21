@@ -139,20 +139,18 @@ class DisplayConfig:
       self,
       refresh: int,
       flip: bool = False,
-      scroll_speed: int = 60,
+      scroll_speed: int | None = None,
   ):
     self.refresh = refresh
     self.flip = flip
-    # Pixels a second, so it does not depend on refresh.
-    self.scroll_speed = scroll_speed
+    # Accepted and ignored: fixed in widgets.py now, and every config.json
+    # already written lists it. Rejecting one would send a working display to
+    # the setup screen.
+    del scroll_speed
 
   def validate(self):
     if self.refresh <= 0:
       raise ValueError(f'Display refresh must be > 0! refresh={self.refresh}')
-    if self.scroll_speed <= 0:
-      raise ValueError(
-          f'Display scroll speed must be > 0! scroll_speed={self.scroll_speed}'
-      )
     if not isinstance(self.flip, bool):
       raise ValueError(f'Display flip must be a boolean! flip={self.flip}')
 
