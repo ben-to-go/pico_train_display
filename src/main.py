@@ -71,6 +71,36 @@ class _NeedsSetup(Exception):
   """The wifi would not connect, so the details are worth asking for again."""
 
 
+def _no_power_saving(wlan: network.WLAN):
+  """Stops the radio parking itself between beacons.
+
+  The chip comes up in CYW43_PERFORMANCE_PM, which sleeps between beacons to
+  save power that a display screwed to a wall on a mains adaptor has no use
+  for. It is also the mode the CYW43 has been seen to wedge in after a few
+  hours: it stops granting transmit credits, the board can no longer send a
+  packet, and nothing here notices, because the link still reads as up. This
+  is not a fix for that, and it is not meant as one; it removes one reason for
+  it to happen at no cost to a display that is never on batteries.
+
+  Set after active(True) and before connecting, because bringing the chip up
+  from cold resets this to the default: anything that cycles the radio has to
+  ask again, and going through here is how it does.
+
+  The value is read back off the chip rather than reported from the constant,
+  so that the log says what the radio did rather than what it was told.
+  """
+  try:
+    wlan.config(pm=network.WLAN.PM_NONE)
+    logging.log('Wifi power saving: pm={}', wlan.config('pm'))
+  except Exception as e:
+    # A board that cannot turn power saving off is still a working board, so
+    # this is worth saying and not worth failing the connect over: raising
+    # from here would send a display that was about to work to the setup
+    # screen instead.
+    logging.log('Could not turn off wifi power saving.')
+    logging.exception(e)
+
+
 def _connect(
     ssid: str, password: str, screen: display.Display | None = None
 ) -> network.WLAN | None:
@@ -93,6 +123,7 @@ def _connect(
   try:
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
+    _no_power_saving(wlan)
     wlan.connect(ssid, password if password else None)
 
     for i in range(_CONNECT_TIMEOUT):
