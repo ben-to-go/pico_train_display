@@ -12,6 +12,13 @@ import time
 # Redrawing faster than this shows a terminal nothing it can keep up with.
 _MIN_REDRAW_MS = 60
 
+# The panel's size in pixels, and so what it needs on screen: _render() gives
+# each pixel a terminal cell across and packs two into one down, so a window
+# has to be WIDTH columns by HEIGHT // 2 rows for the whole board to fit.
+# run.py checks that and says so when it does not.
+WIDTH = 256
+HEIGHT = 64
+
 # Nibble-per-pixel greyscale value -> 8-bit sample.
 _GREY = bytes(min(255, v * 17) for v in range(16))
 
@@ -44,7 +51,7 @@ _ARG_COUNT = {
 class Panel:
   """Reconstructs panel contents from the SSD1322 SPI stream."""
 
-  def __init__(self, width: int = 256, height: int = 64, on_frame=None):
+  def __init__(self, width: int = WIDTH, height: int = HEIGHT, on_frame=None):
     self.width = width
     self.height = height
     self.pixels = bytearray(width * height)  # 4-bit values, one per byte

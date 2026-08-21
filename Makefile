@@ -17,9 +17,20 @@ RP2_BUILD = $(MICROPYTHON_DIR)/ports/rp2/build-$(BOARD)
 # be traced back to what made it. A tag on a release, and the tag plus the
 # commit anywhere else.
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo unknown)
+
+# How many jobs to build with. nproc on Linux, sysctl on a Mac, and 1 if this
+# machine has neither, because an empty -j means unlimited rather than default.
+JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
 FIRMWARE = build/pico_train_display_$(BOARD)_$(VERSION).uf2
 
-.PHONY: sim test firmware firmware-depend sim-depend unix-port
+# Which machine this is. Only the dependency targets care: the firmware and the
+# simulator build the same way either way, but Debian and a Mac name the
+# toolchain differently and install it with different tools.
+HOST ?= $(if $(filter Darwin,$(shell uname -s)),macos,linux)
+
+.PHONY: sim test firmware unix-port command-line-tools \
+	firmware-depend firmware-depend-linux firmware-depend-macos \
+	sim-depend sim-depend-linux sim-depend-macos
 
 # Runs main.py against config.json, with the panel drawn in the terminal.
 sim:
@@ -36,7 +47,7 @@ test:
 firmware: | $(MICROPYTHON_DIR)
 	$(MAKE) -C $(MICROPYTHON_DIR)/mpy-cross
 	$(MAKE) -C $(MICROPYTHON_DIR)/ports/rp2 BOARD=$(BOARD) submodules
-	$(MAKE) -C $(MICROPYTHON_DIR)/ports/rp2 -j $(shell nproc) BOARD=$(BOARD) \
+	$(MAKE) -C $(MICROPYTHON_DIR)/ports/rp2 -j $(JOBS) BOARD=$(BOARD) \
 		FROZEN_MANIFEST=$(CURDIR)/manifest.py
 	@python3 tools/check_firmware.py $(RP2_BUILD)/firmware.uf2 \
 		--board $(BOARD) --elf $(RP2_BUILD)/firmware.elf
@@ -45,18 +56,49 @@ firmware: | $(MICROPYTHON_DIR)
 	@echo 'Flash this: $(FIRMWARE)'
 
 # The cross toolchain the firmware needs, which is not what the simulator
-# needs: one builds for the board, the other for this machine.
-firmware-depend: | $(MICROPYTHON_DIR)
+# needs: one builds for the board, the other for this machine. This installs
+# whichever of the two below suits the machine it is run on; name one directly
+# to install the other, say when building in a Linux container on a Mac.
+firmware-depend: firmware-depend-$(HOST) | $(MICROPYTHON_DIR)
+
+firmware-depend-linux:
 	sudo apt-get update
 	sudo apt-get install -y cmake gcc-arm-none-eabi \
 		libnewlib-arm-none-eabi build-essential
 
-# Everything the simulator needs, from nothing. Host tools only.
-sim-depend: | $(MICROPYTHON_DIR)
-	sudo apt-get update
-	sudo apt-get install -y build-essential git pkg-config
+# Homebrew's arm-none-eabi-gcc formula is the compiler with no libc behind it,
+# so every #include <stdio.h> in the firmware fails to resolve. The cask is
+# ARM's own build, which brings newlib with it. That build also loads
+# Homebrew's libzstd from a fixed path, so cc1 will not start without zstd
+# present, however little the firmware has to do with compressing anything.
+#
+# Installing the cask runs a pkg, so it asks for a password, in the way the
+# apt-get above does.
+firmware-depend-macos: command-line-tools
+	brew install cmake zstd
+	brew install --cask gcc-arm-embedded
+
+# Everything the simulator needs, from nothing. Host tools only, so the split
+# here is just the packages: what to build once they are installed is the same
+# on either machine.
+sim-depend: sim-depend-$(HOST) | $(MICROPYTHON_DIR)
 	$(MAKE) -C $(MICROPYTHON_DIR)/ports/unix submodules
 	$(MAKE) unix-port
+
+sim-depend-linux:
+	sudo apt-get update
+	sudo apt-get install -y build-essential git pkg-config
+
+sim-depend-macos: command-line-tools
+	brew install pkg-config
+
+# The clang, make and git that both builds compile host tools with. A Mac
+# installs them through a dialog rather than a package manager, so there is
+# nothing to run unattended here and this only says what is missing.
+command-line-tools:
+	@xcode-select -p >/dev/null 2>&1 || { \
+		echo 'Xcode command line tools are missing: xcode-select --install'; \
+		exit 1; }
 
 # The checkout both the firmware and the simulator are built from. A real
 # target, so it is cloned once and then left alone; that checkout and its build
