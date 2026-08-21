@@ -23,3 +23,4 @@ RAM consumption."""
 
 from . import dot_matrix_regular
 from . import dot_matrix_clock
+from . import dot_matrix_seconds

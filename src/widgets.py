@@ -47,6 +47,17 @@ _ALTERNATE_SECONDS = 8
 # Pixels square, in the bottom right corner.
 _STALE_DOT_SIZE = 1
 
+# The clock's colon, drawn rather than taken from the font, whose dots sit
+# closer together than the real board's. Square like the digits' stroke, with
+# this much clearance above the top one and below the bottom.
+_COLON_DOT = 2
+_COLON_INSET = 1
+_COLON_WIDTH = _COLON_DOT + 1
+
+# The tall digits hang two rows below the baseline the smaller ones sit on, so
+# the seconds drop by that much to share a bottom edge.
+_SECONDS_DROP = 2
+
 
 def _distribute(height: int, row_heights) -> tuple[int, ...]:
   """Spreads rows down the screen with the space shared out evenly.
@@ -111,13 +122,34 @@ class Widget:
     ...
 
 
+def _widest_digit(font: fonts.Font) -> int:
+  """The cell every digit gets, so the clock keeps still as it ticks.
+
+  The fonts are proportional - a clock '1' is 5 pixels to a '0's 9 - so laying
+  the digits out by their own widths moves the colons and the seconds about
+  every time the time changes, and leaves a 1 crowding whatever follows it.
+  """
+  return max(font.calculate_bounds(d)[0] for d in '0123456789')
+
+
 class ClockWidget(Widget):
   """The clock, alone and centred on the bottom row of the board."""
 
-  def __init__(self, screen: display.Display, font: fonts.Font):
+  def __init__(
+      self,
+      screen: display.Display,
+      font: fonts.Font,
+      seconds_font: fonts.Font,
+  ):
     super().__init__(screen)
     self._font = font
-    self._bounds = font.calculate_bounds('00:00:00')
+    self._seconds_font = seconds_font
+    self._pitch = _widest_digit(font)
+    self._seconds_pitch = _widest_digit(seconds_font)
+    self._bounds = (
+        self._pitch * 4 + _COLON_WIDTH * 2 + self._seconds_pitch * 2,
+        font.calculate_bounds('0')[1],
+    )
     self._last_update = None
 
   def bounds(self):
@@ -129,12 +161,31 @@ class ClockWidget(Widget):
       return False
 
     self._screen.fill_rect(x, y, w, h, 0)
-    self._font.render_text(
-        '{:02d}:{:02d}:{:02d}'.format(now[3], now[4], now[5]), self._screen, x, y
+    for part in now[3:5]:
+      x = self._render_digits(self._font, part, self._pitch, x, y)
+      x = self._render_colon(x, y, h)
+    # Smaller than the hours and minutes, as on the real board, and dropped to
+    # sit on the same bottom edge.
+    self._render_digits(
+        self._seconds_font, now[5], self._seconds_pitch, x, y + _SECONDS_DROP
     )
 
     self._last_update = current_update
     return True
+
+  def _render_digits(
+      self, font: fonts.Font, value: int, pitch: int, x: int, y: int
+  ) -> int:
+    for digit in '{:02d}'.format(value):
+      width = font.calculate_bounds(digit)[0]
+      font.render_text(digit, self._screen, x + (pitch - width) // 2, y)
+      x += pitch
+    return x
+
+  def _render_colon(self, x: int, y: int, h: int) -> int:
+    for top in (_COLON_INSET, h - _COLON_INSET - _COLON_DOT):
+      self._screen.fill_rect(x, y + top, _COLON_DOT, _COLON_DOT, 15)
+    return x + _COLON_WIDTH
 
 
 class NoDeparturesWidget(Widget):
@@ -382,7 +433,8 @@ class MainWidget(Widget):
 
     # Four rows of the same height. Text uses seven of each row's nine pixels
     # and leaves two for descenders; the clock, having none, fills all nine.
-    self._clock_widget = ClockWidget(screen, clock_font)
+    self._clock_widget = ClockWidget(
+        screen, clock_font, fonts.SECONDS_FONT)
     self._no_departures_widget = NoDeparturesWidget(screen, font)
     self._calling_at_widget = ScrollingTextWidget(
         screen, font, _CALLING_AT, scroll_speed
