@@ -53,6 +53,18 @@ _SETUP_MESSAGE = (
 
 _CONNECT_TIMEOUT = 15
 
+# How long a display goes without loading a board before it reboots. Nothing
+# short of a fetch working says the network is there: the radio can lose the
+# ability to transmit while the link still reads as up, and isconnected() goes
+# on saying yes throughout. Half an hour is long enough that a router being
+# rebooted or an API having a bad morning is ridden out rather than reset over.
+_REBOOT_AFTER = 30 * 60
+
+# Long enough for the last log batch to reach the collector, short enough that
+# a board which cannot transmit is not held up by trying. The rp2 watchdog
+# tops out a little over eight seconds.
+_SHUTDOWN_WATCHDOG_MS = 8000
+
 gc.collect()
 
 
@@ -69,6 +81,33 @@ def _log_memory():
 
 class _NeedsSetup(Exception):
   """The wifi would not connect, so the details are worth asking for again."""
+
+
+class _RadioIsGone(Exception):
+  """Nothing has loaded for long enough that only a reboot is left to try."""
+
+
+def _arm_shutdown_watchdog():
+  """Makes the reboot happen whatever the shutdown does next.
+
+  The shutdown ships the log before resetting, which is worth a few seconds:
+  the last thing a display says is the reason it stopped saying anything. But
+  a radio that has stopped transmitting is exactly when that matters and
+  exactly when the send does not come back, and the reset it holds up is the
+  one thing that would have fixed the radio. Interrupting such a board left it
+  needing a physical replug rather than rebooting.
+
+  A watchdog cannot be stopped once started, which is what is wanted here:
+  every path past this line ends in a reset anyway, so the only question is
+  whether it is reached.
+  """
+  try:
+    machine.WDT(timeout=_SHUTDOWN_WATCHDOG_MS)
+  except Exception as e:
+    # No watchdog on this port, or one already running. Neither is worth
+    # abandoning the shutdown over, and both are worth knowing about.
+    logging.log('No shutdown watchdog, so the reset is not guaranteed.')
+    logging.exception(e)
 
 
 def _no_power_saving(wlan: network.WLAN):
@@ -245,6 +284,11 @@ def run(config: config_module.Config):
     update_interval = config.rtt.update_interval
     failures = 0
 
+    # When a board was last actually loaded from the API. About the fetch
+    # rather than the wifi, because the fetch is the only thing here that a
+    # radio which has stopped transmitting cannot fake.
+    last_loaded = time.ticks_ms()
+
     # Get first set of departures synchonously. A failure here is not fatal:
     # the display falls back to the departures baked into the firmware, and
     # the update loop below keeps trying.
@@ -255,6 +299,7 @@ def run(config: config_module.Config):
     try:
       departure_updater.update()
       wait = update_interval
+      last_loaded = time.ticks_ms()
     except Exception as e:
       logging.log('Initial train update failed, using fallback departures.')
       logging.exception(e)
@@ -283,6 +328,22 @@ def run(config: config_module.Config):
       for _ in range(wait):
         time.sleep(1)
 
+        # Checked inside the wait rather than once a go round, because the
+        # backoff reaches half an hour, which is the deadline itself: a board
+        # waiting one out would not look at this until an hour had gone.
+        #
+        # A reboot is the whole of the recovery. Taking the interface down
+        # first looks gentler but cannot work: active(False) sends a
+        # disassociate ioctl over the same bus that is carrying nothing, and
+        # connect() has the same problem with its join. Dropping power to the
+        # chip is what clears it, and a reset is how this board does that.
+        stale_for = time.ticks_diff(time.ticks_ms(), last_loaded) // 1000
+        if stale_for >= _REBOOT_AFTER:
+          logging.log(
+              'Nothing has loaded for {}s, so rebooting to get the radio '
+              'back.', stale_for)
+          raise _RadioIsGone()
+
       # The whole chain, rebuilt from wherever it broke: the aerial first,
       # then the clock, then the API. Any link can be down at any point, and
       # the board keeps showing what it has while they come back.
@@ -300,6 +361,7 @@ def run(config: config_module.Config):
         gc.collect()
         failures = 0
         wait = update_interval
+        last_loaded = time.ticks_ms()
       except Exception as e:
         # Anything at all: a dropped connection, a rate limit, a revoked
         # token, an API that has been retired and now answers with something
@@ -415,6 +477,12 @@ def main():
   except _NeedsSetup:
     logging.log('Could not join the wifi, asking for the details again.')
     _run_setup()
+  except _RadioIsGone:
+    # Asked for, not a crash: the loop has run out of things to try and wants
+    # the reset in the shutdown below. Returning gets it there without the
+    # traceback and the memory dump an unhandled exception prints, neither of
+    # which says anything about a radio that stopped answering.
+    logging.log('Rebooting to get the radio back.')
 
 
 if __name__ == '__main__':
@@ -430,7 +498,10 @@ if __name__ == '__main__':
   finally:
     logging.log('Shutdown')
     # The last thing a display says is the reason it stopped saying anything,
-    # so it is worth the few seconds before the reset.
+    # so it is worth a few seconds before the reset - but only a few, and only
+    # if the send comes back at all. The watchdog goes on first so that the
+    # reboot happens either way.
+    _arm_shutdown_watchdog()
     otel.send()
     logging.on_exit()
 
