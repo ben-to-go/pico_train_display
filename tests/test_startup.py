@@ -527,3 +527,55 @@ class ShutdownWatchdogTest(unittest.TestCase):
     main._arm_shutdown_watchdog()
 
     self.assertIn('No shutdown watchdog', '\n'.join(self.lines))
+
+
+class ScanNetworksTest(unittest.TestCase):
+  """Nearby Wi-Fi networks found before the setup portal starts."""
+
+  def setUp(self):
+    self.addCleanup(setattr, main, 'network', main.network)
+
+  def _stub_wlan(self, scan_results):
+    class _ScanWLAN(main.network.WLAN):
+
+      def scan(self):
+        return scan_results
+
+    main.network = types.SimpleNamespace(
+        STA_IF=main.network.STA_IF, WLAN=_ScanWLAN
+    )
+
+  def test_orders_by_signal_strength_and_deduplicates(self):
+    # -40 dBm is stronger than -75 dBm; mesh nodes broadcasting the same SSID
+    # appear only once.
+    self._stub_wlan([
+        (b'WeakNet', b'', 1, -80, 3, 0),
+        (b'MeshNet', b'', 1, -75, 3, 0),
+        (b'StrongNet', b'', 6, -30, 3, 0),
+        (b'MeshNet', b'', 11, -40, 3, 0),
+    ])
+
+    self.assertEqual(
+        ['StrongNet', 'MeshNet', 'WeakNet'], main._scan_networks()
+    )
+
+  def test_omits_empty_or_whitespace_ssids(self):
+    self._stub_wlan([
+        (b'', b'', 1, -30, 3, 1),
+        (b'   ', b'', 6, -40, 3, 0),
+        (b'ValidNet', b'', 11, -50, 3, 0),
+    ])
+
+    self.assertEqual(['ValidNet'], main._scan_networks())
+
+  def test_returns_empty_list_on_scan_failure(self):
+    class _Fails(main.network.WLAN):
+
+      def scan(self):
+        raise OSError('radio not ready')
+
+    main.network = types.SimpleNamespace(
+        STA_IF=main.network.STA_IF, WLAN=_Fails
+    )
+
+    self.assertEqual([], main._scan_networks())

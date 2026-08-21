@@ -37,7 +37,10 @@
     </tr>
     <tr>
       <td><label for="wifi[ssid]">Network name:</label></td>
-      <td><input type="text" id="wifi[ssid]" name="wifi[ssid]" required></td>
+      <td>
+        <input type="text" id="wifi[ssid]" name="wifi[ssid]" list="ssids" required>
+        <datalist id="ssids"></datalist>
+      </td>
     </tr>
     <tr>
       <td><label for="wifi[password]">Password:</label></td>

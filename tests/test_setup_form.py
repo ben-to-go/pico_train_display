@@ -123,3 +123,25 @@ class AdvancedSectionTest(unittest.TestCase):
     with open(_SETUP_HTML) as f:
       html = f.read()
     self.assertIn('<details id="{}">'.format(setup.ADVANCED), html)
+
+
+class SuggestNetworksTest(unittest.TestCase):
+  """A display populates a datalist of visible Wi-Fi networks."""
+
+  def test_returns_empty_when_no_networks(self):
+    self.assertEqual(b'', setup.suggest_networks([]))
+
+  def test_populates_datalist_options(self):
+    result = setup.suggest_networks(['Home-WiFi', 'Office-WiFi'])
+    self.assertEqual(
+        b'<script>document.getElementById("ssids").innerHTML='
+        b'"<option value=\\"Home-WiFi\\"><option value=\\"Office-WiFi\\">"'
+        b'</script>',
+        result,
+    )
+
+  def test_the_page_has_the_datalist_and_input_list(self):
+    with open(_SETUP_HTML) as f:
+      html = f.read()
+    self.assertIn('<datalist id="{}">'.format(setup.SSIDS), html)
+    self.assertIn('list="{}"'.format(setup.SSIDS), html)

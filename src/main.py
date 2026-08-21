@@ -423,8 +423,35 @@ async def _setup_access_point():
   )
 
 
+def _scan_networks() -> list[str]:
+  """Finds nearby Wi-Fi network names, sorted by signal strength."""
+  try:
+    sta = network.WLAN(network.STA_IF)
+    sta.active(True)
+    results = sta.scan()
+    ssids = []
+    seen = set()
+    for s in sorted(
+        results, key=lambda x: x[3] if len(x) > 3 else 0, reverse=True
+    ):
+      ssid_raw = s[0]
+      if isinstance(ssid_raw, (bytes, bytearray)):
+        name = ssid_raw.decode('utf-8', 'ignore').strip()
+      else:
+        name = str(ssid_raw).strip()
+      if name and name not in seen:
+        seen.add(name)
+        ssids.append(name)
+    return ssids
+  except Exception as e:
+    logging.log('Could not scan for wifi networks.')
+    logging.exception(e)
+    return []
+
+
 async def setup(screen: display.Display):
   event = asyncio.Event()
+  ssids = _scan_networks()
   ap = await _setup_access_point()
   ip_address = ap.ifconfig()[0]
 
@@ -442,7 +469,7 @@ async def setup(screen: display.Display):
     with open('config.json', 'w') as f:
       json.dump(cfg, f)
 
-  web_server = await server.start(_write_config, event)
+  web_server = await server.start(_write_config, event, ssids=ssids)
   await event.wait()
   web_server.close()
   screen.fill(0)
