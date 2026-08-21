@@ -19,7 +19,7 @@ RP2_BUILD = $(MICROPYTHON_DIR)/ports/rp2/build-$(BOARD)
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo unknown)
 FIRMWARE = build/pico_train_display_$(BOARD)_$(VERSION).uf2
 
-.PHONY: sim test firmware firmware-depend sim-depend unix-port
+.PHONY: sim test firmware baked firmware-depend sim-depend unix-port
 
 # Runs main.py against config.json, with the panel drawn in the terminal.
 sim:
@@ -33,7 +33,7 @@ test:
 #
 # Incremental: with the checkout and the build directory already there, a
 # change to src/ is a few seconds, which is the point of having it here.
-firmware: | $(MICROPYTHON_DIR)
+firmware: baked | $(MICROPYTHON_DIR)
 	$(MAKE) -C $(MICROPYTHON_DIR)/mpy-cross
 	$(MAKE) -C $(MICROPYTHON_DIR)/ports/rp2 BOARD=$(BOARD) submodules
 	$(MAKE) -C $(MICROPYTHON_DIR)/ports/rp2 -j $(shell nproc) BOARD=$(BOARD) \
@@ -43,6 +43,14 @@ firmware: | $(MICROPYTHON_DIR)
 	@mkdir -p $(dir $(FIRMWARE))
 	@cp $(RP2_BUILD)/firmware.uf2 $(FIRMWARE)
 	@echo 'Flash this: $(FIRMWARE)'
+
+# The tokens this image carries, out of the .env sim/run.sh already reads and
+# into a module the manifest freezes. Into build/ because it is generated, and
+# because nothing there is on the path a test or the simulator imports from.
+baked:
+	@mkdir -p build
+	@set -a; [ -f .env ] && . ./.env; set +a; \
+		python3 tools/write_baked.py build/baked.py
 
 # The cross toolchain the firmware needs, which is not what the simulator
 # needs: one builds for the board, the other for this machine.

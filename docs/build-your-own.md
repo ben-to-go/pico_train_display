@@ -84,13 +84,69 @@ name, a password and an address.
 
 1. Join `Pico Train Display` from a phone, password `12345678`.
 2. Open the address shown on the panel.
-3. Fill in your wifi, a
-   [Realtime Trains API token](https://api-portal.rtt.io/), and the three
+3. Fill in your wifi.
+4. Open **Advanced settings** for a
+   [Realtime Trains API token](https://api-portal.rtt.io/) and the three
    letter codes for the station and where you are heading, e.g. `SKM` to
-   `MYB`.
-4. Save. It restarts and the board appears.
+   `MYB`. It opens itself if the firmware has no token of its own.
+5. Save. It restarts and the board appears.
 
-The last two fields, under **Advanced**, are optional and covered below.
+Everything under **Advanced settings** has a default that works, apart from
+the token. A display built with one already in it needs nothing but the wifi:
+see [Giving one away](#giving-one-away).
+
+## Giving one away
+
+A present should ask for the wifi and nothing else. Nobody wants to register
+for a train API on Christmas morning, so the tokens can travel in the firmware
+instead of being typed into the setup page.
+
+Put them in a `.env` next to the Makefile — the same file the simulator
+reads — and build:
+
+```
+RTT_TOKEN=your-token
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic%20...
+```
+
+```
+make firmware
+```
+
+The build prints what it baked in, and how long each value was, so a `.env` it
+could not read is obvious rather than silent:
+
+```
+  Baked in: RTT_TOKEN (32 chars), OTEL_HEADERS (96 chars)
+```
+
+Flash that image and the setup page asks for the wifi and nothing else.
+Everything else — the tokens, the station codes, the display options — is
+folded into **Advanced settings**, collapsed, with the defaults the page has
+always had. Anything left blank there falls back to what was baked in, and
+anything typed in wins, which is how a revoked token gets replaced without a
+rebuild.
+
+A build with no `.env` bakes nothing and opens that section by itself, since
+then there is an API token in it that has to be filled in. So the released
+firmware is set up exactly as it always was.
+
+**A baked image is not a secret.** Frozen strings sit in the `.uf2` as plain
+text:
+
+```
+strings firmware.uf2 | grep -i token
+```
+
+Anyone holding the board can read them back the same way, over USB. Which is
+fine for a present, and means two things worth doing:
+
+- **Use a token issued for the gift**, not your own. Realtime Trains rate
+  limits per account, so a shared token means their display eats your
+  allowance, and a separate one can be revoked on its own.
+- **Never publish a baked image.** Tagging a release attaches the `.uf2` to
+  it, and that would publish the token with it. CI has no `.env`, so images
+  built there carry nothing — only your own local builds do.
 
 ## Changing the settings later
 
@@ -152,7 +208,9 @@ go.
 The simulator reads the same two settings from `OTEL_EXPORTER_OTLP_ENDPOINT`
 and `OTEL_EXPORTER_OTLP_HEADERS` in a `.env` file, which is the pair of
 variables Grafana hands out, so `sim/run.sh` ships its log without a
-`config.json` entry.
+`config.json` entry. `make firmware` reads the same file, which is how a
+display given away sends its log home without anyone pasting a header into the
+setup page. See [Giving one away](#giving-one-away).
 
 ## If nothing appears
 

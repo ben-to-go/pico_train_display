@@ -16,7 +16,11 @@
 # COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 # IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-"""Tests for reading the RTT token from the environment.
+"""Tests for the three places a token can come from.
+
+config.json, the environment, and the firmware itself, in that order. The last
+is what lets a display be given away: whoever unwraps it fills in the wifi and
+leaves the token fields blank.
 
 Run with:
   python3 -m unittest discover -s tests
@@ -24,6 +28,7 @@ Run with:
 
 import os
 import sys
+import types
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -31,34 +36,79 @@ import firmware_path  # noqa: E402,F401  see its docstring
 
 import config
 
+# No module frozen in at all, as opposed to one holding an empty string. Both
+# happen: the second is what a build with no .env writes.
+_NOT_BAKED = None
 
-class TokenFromEnvironmentTest(unittest.TestCase):
+
+class TokenSourceTest(unittest.TestCase):
 
   def setUp(self):
-    self._original = os.environ.get('RTT_TOKEN')
-    self.addCleanup(self._restore)
+    # Two of the three are ambient, so a test that reads one it did not set
+    # would pass or fail by what the machine happens to have.
+    for name in ('RTT_TOKEN', 'OTEL_EXPORTER_OTLP_HEADERS'):
+      original = os.environ.pop(name, None)
+      if original is not None:
+        self.addCleanup(os.environ.__setitem__, name, original)
+    self.addCleanup(sys.modules.pop, 'baked', None)
 
-  def _restore(self):
-    if self._original is None:
-      os.environ.pop('RTT_TOKEN', None)
-    else:
-      os.environ['RTT_TOKEN'] = self._original
+  def _bake(self, **values):
+    """What the frozen module holds, or nothing frozen in if given nothing.
 
-  def test_uses_the_token_in_the_config(self):
-    os.environ['RTT_TOKEN'] = 'from-environment'
-    rtt = config.RttConfig('https://data.rtt.io', 'from-config', 20)
-    self.assertEqual('from-config', rtt.token)
+    Into sys.modules, because config.py imports it inside the function that
+    reads it. None is what makes that import raise, as it does on a board
+    built without the module.
+    """
+    module = types.ModuleType('baked')
+    for name, value in values.items():
+      setattr(module, name, value)
+    sys.modules['baked'] = module if values else _NOT_BAKED
 
-  def test_falls_back_to_the_environment(self):
-    os.environ['RTT_TOKEN'] = 'from-environment'
-    rtt = config.RttConfig('https://data.rtt.io', '', 20)
-    self.assertEqual('from-environment', rtt.token)
+  def test_the_rtt_token_comes_from_the_first_of_the_three_to_have_one(self):
+    # config.json, environment, firmware -> the token used. The config winning
+    # is how a revoked one gets replaced without a rebuild; an empty baked one
+    # behaving as absent is every build with no .env, CI included.
+    cases = (
+        ('from-config', 'from-env', 'from-fw', 'from-config'),
+        ('', 'from-env', 'from-fw', 'from-env'),
+        ('', None, 'from-fw', 'from-fw'),
+        ('', None, '', None),
+        ('', None, _NOT_BAKED, None),
+    )
+    for in_config, in_env, baked, token in cases:
+      with self.subTest(config=in_config, env=in_env, baked=baked):
+        if in_env is None:
+          os.environ.pop('RTT_TOKEN', None)
+        else:
+          os.environ['RTT_TOKEN'] = in_env
+        self._bake() if baked is _NOT_BAKED else self._bake(RTT_TOKEN=baked)
 
-  def test_no_token_anywhere_is_rejected(self):
-    os.environ.pop('RTT_TOKEN', None)
-    rtt = config.RttConfig('https://data.rtt.io', '', 20)
-    with self.assertRaises(ValueError):
-      rtt.validate()
+        rtt = config.RttConfig('https://data.rtt.io', in_config, 20)
+        self.assertEqual(token, rtt.token)
+        if token is None:
+          with self.assertRaises(ValueError):
+            rtt.validate()
+        else:
+          rtt.validate()
+
+  def test_the_collector_token_is_read_out_of_a_baked_grafana_header(self):
+    # Baked as the whole OTEL_EXPORTER_OTLP_HEADERS value, leaving config.py
+    # the only reader of what one means. baked, configured -> the header sent.
+    cases = (
+        ('Authorization=Basic%20abc', '', 'Basic abc'),
+        ('X-Scope-OrgID=42,Authorization=Basic%20abc', '', 'Basic abc'),
+        ('Authorization=Basic%20baked', 'Basic typed', 'Basic typed'),
+        ('X-Scope-OrgID=42', '', ''),
+        ('', '', ''),
+        (_NOT_BAKED, '', ''),
+    )
+    for baked, configured, auth in cases:
+      with self.subTest(baked=baked, configured=configured):
+        self._bake() if baked is _NOT_BAKED else self._bake(OTEL_HEADERS=baked)
+
+        otel = config.OtelConfig(auth=configured)
+        self.assertEqual(auth, otel.auth)
+        self.assertEqual(bool(auth), otel.enabled)
 
 
 class ScrollSpeedTest(unittest.TestCase):

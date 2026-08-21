@@ -29,12 +29,14 @@ import inspect
 import os
 import re
 import sys
+import types
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
 import firmware_path  # noqa: E402,F401  see its docstring
 
 import config
+import setup
 
 _SETUP_HTML = os.path.join(
     os.path.dirname(__file__), '..', 'assets', 'setup.html'
@@ -83,3 +85,41 @@ class SetupFormTest(unittest.TestCase):
     # posting one now raises rather than being quietly ignored.
     extra = _form_fields() - _settings_of(config.Config)
     self.assertEqual(set(), extra)
+
+
+class AdvancedSectionTest(unittest.TestCase):
+  """A display asks for the wifi, and for a token only if it has none.
+
+  Everything but the wifi is collapsed. The fields are all still there and
+  still submit, so a blank token is what makes config.py fall back to the one
+  built in.
+  """
+
+  def setUp(self):
+    self.addCleanup(sys.modules.pop, 'baked', None)
+
+  def _bake(self, token):
+    # None for a firmware with no such module frozen in at all, which is what
+    # makes `import baked` raise; '' for what a build with no .env writes.
+    if token is None:
+      sys.modules['baked'] = None
+      return
+    module = types.ModuleType('baked')
+    module.RTT_TOKEN = token
+    sys.modules['baked'] = module
+
+  def test_opens_itself_only_when_a_token_has_to_be_typed_in(self):
+    opener = (
+        '<script>document.getElementById("advanced").open=true</script>'.encode()
+    )
+    for baked, expected in ((None, opener), ('', opener), ('a-token', b'')):
+      with self.subTest(baked=baked):
+        self._bake(baked)
+        self.assertEqual(expected, setup.open_advanced())
+
+  def test_the_page_has_the_section_that_script_reaches_for(self):
+    # Nothing else connects the two, and a renamed section would leave a
+    # firmware with no token of its own hiding the field that asks for one.
+    with open(_SETUP_HTML) as f:
+      html = f.read()
+    self.assertIn('<details id="{}">'.format(setup.ADVANCED), html)
