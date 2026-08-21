@@ -31,12 +31,27 @@ def _token_from_env() -> str | None:
   return getenv('RTT_TOKEN') if getenv else None
 
 
+def from_firmware(name: str) -> str | None:
+  """A token built in by tools/write_baked.py, if this build had one.
+
+  How a display given away as a present has an API token without anyone typing
+  one into the setup page. Read last, so config.json still wins. Nothing
+  generates that module outside a firmware build, and a build with no .env
+  writes empty strings, so finding nothing is the ordinary case.
+  """
+  try:
+    import baked
+  except ImportError:
+    return None
+  return getattr(baked, name, None) or None
+
+
 class RttConfig:
   """Real-time trains configuration."""
 
   def __init__(self, endpoint: str, token: str, update_interval: int):
     self.endpoint = endpoint
-    self.token = token or _token_from_env()
+    self.token = token or _token_from_env() or from_firmware('RTT_TOKEN')
     self.update_interval = update_interval
 
   def validate(self):
@@ -48,26 +63,37 @@ class RttConfig:
       )
 
 
+def _auth_from_headers(headers: str | None) -> str | None:
+  """The Authorization value out of an OTEL_EXPORTER_OTLP_HEADERS string.
+
+  'name=value,name=value', of which only the one header is any use here, and
+  _normalise_auth tidies up what it says. Its own function because that string
+  now arrives from the environment or from the firmware, and one reader of it
+  is what stops a header working in the simulator and failing on the board.
+  """
+  for header in (headers or '').split(','):
+    name, _, value = header.partition('=')
+    if name.strip().lower() == 'authorization':
+      return value
+  return None
+
+
 def _otel_from_env() -> tuple[str | None, str | None]:
   """(endpoint, auth) from the standard OTEL_ variables, if they are set.
 
   The same trick as _token_from_env, and for the same reason: the simulator
   reads .env, which is where the OpenTelemetry variables Grafana hands out
   already live. The device has no environment and gets these from
-  config.json instead.
+  config.json, or from what was baked into the firmware, instead.
   """
   getenv = getattr(os, 'getenv', None)
   if getenv is None:
     return None, None
 
-  auth = None
-  # OTEL_EXPORTER_OTLP_HEADERS is 'name=value,name=value'. Only the one
-  # header is any use here, and _normalise_auth tidies up what it says.
-  for header in (getenv('OTEL_EXPORTER_OTLP_HEADERS') or '').split(','):
-    name, _, value = header.partition('=')
-    if name.strip().lower() == 'authorization':
-      auth = value
-  return getenv('OTEL_EXPORTER_OTLP_ENDPOINT'), auth
+  return (
+      getenv('OTEL_EXPORTER_OTLP_ENDPOINT'),
+      _auth_from_headers(getenv('OTEL_EXPORTER_OTLP_HEADERS')),
+  )
 
 
 def _normalise_auth(auth: str) -> str:
@@ -104,11 +130,12 @@ class OtelConfig:
 
   def __init__(self, endpoint: str = '', auth: str = ''):
     env_endpoint, env_auth = _otel_from_env()
+    baked_auth = _auth_from_headers(from_firmware('OTEL_HEADERS'))
     # The base OTLP endpoint, without the /v1/logs that otel.py appends.
     self.endpoint = endpoint or env_endpoint or DEFAULT_OTEL_ENDPOINT
     # The whole Authorization header value, 'Basic <base64>' for Grafana
     # Cloud, tidied up so that pasting what the console shows works.
-    self.auth = _normalise_auth(auth or env_auth or '')
+    self.auth = _normalise_auth(auth or env_auth or baked_auth or '')
 
   @property
   def enabled(self) -> bool:

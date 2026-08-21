@@ -77,8 +77,12 @@ _BOARDS = {
 # module that merely gets mentioned somewhere does not count as present.
 # What gets frozen is manifest.py, via:
 # https://docs.micropython.org/en/latest/reference/manifest.html
+#
+# 'baked' holds nothing in most builds, but losing its manifest entry would be
+# silent until a display given to somebody asked them for an API token.
 _EXPECTED_FROZEN = (
-    'main', 'trains', 'widgets', 'fallback', 'ssd1322', 'parallel8080', 'otel'
+    'main', 'trains', 'widgets', 'fallback', 'ssd1322', 'parallel8080', 'otel',
+    'baked',
 )
 
 # MicroPython allocates its heap from whatever SRAM the linker did not claim:

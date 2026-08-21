@@ -45,116 +45,126 @@
         <input type="password" id="wifi[password]" name="wifi[password]" placeholder="Enter password">
       </td>
     </tr>
-
-    <tr>
-      <th colspan=2>
-        <h2>Realtime Trains API Settings</h2>
-      </th>
-    </tr>
-    <tr>
-      <td colspan=2>
-        Visit <a href="https://api-portal.rtt.io/">https://api-portal.rtt.io/</a>
-        to register and obtain an API token.
-      </td>
-    </tr>
-    <tr>
-      <td><label for="rtt[endpoint]">Endpoint URL:</label></td>
-      <td>
-        <input type="text" id="rtt[endpoint]" name="rtt[endpoint]" value="https://data.rtt.io" required>
-      </td>
-    </tr>
-    <tr>
-      <td><label for="rtt[token]">API token:</label></td>
-      <td>
-        <input type="password" id="rtt[token]" name="rtt[token]" placeholder="Enter token" required>
-      </td>
-    </tr>
-    <tr>
-      <td><label for="rtt[update_interval]:int">Update interval (in seconds):</label></td>
-      <td>
-        <input type="number" id="rtt[update_interval]:int" name="rtt[update_interval]:int" value=120 required>
-      </td>
-    </tr>
-
-    <tr>
-      <th colspan=2>
-        <h2>Train Options</h2>
-      </th>
-    </tr>
-    <tr>
-      <td colspan=2>
-        Visit <a href=https://en.wikipedia.org/wiki/UK_railway_stations>wikipedia</a>
-        to find the 3-letter station code.
-      </td>
-    <tr>
-      <td><label for="station">Station (3-letter code):</label></td>
-      <td><input type="text" id="station" name="station" value="SKM" required></td>
-    </tr>
-    <tr>
-      <td><label for="destination">Destination (3-letter code):</label></td>
-      <td><input type="text" id="destination" name="destination" value="MYB" required></td>
-    </tr>
-    <tr>
-      <td><label for="min_departure_time:int">Minimum departure time (mins):</label></td>
-      <td><input type="text" id="min_departure_time:int" name="min_departure_time:int" value=0 required></td>
-    </tr>
-
-    <tr>
-      <th colspan=2>
-        <h2>Display Options</h2>
-      </th>
-    </tr>
-    <tr>
-      <td><label for="display[flip]:bool">Flip display:</label></td>
-      <td><input type="checkbox" id="display[flip]:bool" name="display[flip]:bool"></td>
-    </tr>
-
-    <tr>
-      <th colspan=2>
-        <h2>Advanced</h2>
-      </th>
-    </tr>
-    <tr>
-      <td><label for="display[refresh]:int">Refresh rate (per second):</label></td>
-      <td><input type="number" id="display[refresh]:int" name="display[refresh]:int" value=60 required></td>
-    </tr>
-    <tr>
-      <td><label for="display[scroll_speed]:int">Scroll speed (pixels per second):</label></td>
-      <td><input type="number" id="display[scroll_speed]:int" name="display[scroll_speed]:int" value=60 required></td>
-    </tr>
-    <tr>
-      <td><label for="debug[log]:bool">Save debug logs:</label></td>
-      <td><input type="checkbox" id="debug[log]:bool" name="debug[log]:bool"></td>
-    </tr>
-    <tr>
-      <td colspan=2>
-        Optional: send the log somewhere it can be read without unplugging the
-        display. Paste the Authorization header from your Grafana Cloud
-        stack's OTLP page, and change the URL there if your stack is in
-        another region. Leave the token blank and nothing is sent.
-      </td>
-    </tr>
-    <tr>
-      <td><label for="otel[endpoint]">Log collector URL:</label></td>
-      <td>
-        <input type="text" id="otel[endpoint]" name="otel[endpoint]"
-               value="https://otlp-gateway-prod-gb-south-1.grafana.net/otlp">
-      </td>
-    </tr>
-    <tr>
-      <td><label for="otel[auth]">Log collector token:</label></td>
-      <td>
-        <input type="password" id="otel[auth]" name="otel[auth]" placeholder="Basic ...">
-      </td>
-    </tr>
   </table>
+
+  <!-- Everything that is not the wifi, collapsed but still editable.
+       setup/__init__.py opens it on a firmware built without an API token,
+       which is the one field in here that has no usable default.
+
+       Its own table: a <details> among <tr>s is not allowed, and the parser
+       hoists it out of the table rather than telling anybody. -->
+  <details id="advanced">
+    <summary>Advanced settings</summary>
+    <table>
+      <tr>
+        <th colspan=2>
+          <h2>Realtime Trains API</h2>
+        </th>
+      </tr>
+      <tr>
+        <td colspan=2>
+          Visit <a href="https://api-portal.rtt.io/">https://api-portal.rtt.io/</a>
+          to register and obtain an API token. Leave it blank if this display
+          came with one.
+        </td>
+      </tr>
+      <tr>
+        <td><label for="rtt[endpoint]">Endpoint URL:</label></td>
+        <td>
+          <input type="text" id="rtt[endpoint]" name="rtt[endpoint]" value="https://data.rtt.io" required>
+        </td>
+      </tr>
+      <tr>
+        <td><label for="rtt[token]">API token:</label></td>
+        <td>
+          <input type="password" id="rtt[token]" name="rtt[token]" placeholder="Enter token">
+        </td>
+      </tr>
+      <tr>
+        <td><label for="rtt[update_interval]:int">Update interval (in seconds):</label></td>
+        <td>
+          <input type="number" id="rtt[update_interval]:int" name="rtt[update_interval]:int" value=120 required>
+        </td>
+      </tr>
+
+      <tr>
+        <th colspan=2>
+          <h2>Train Options</h2>
+        </th>
+      </tr>
+      <tr>
+        <td colspan=2>
+          Visit <a href=https://en.wikipedia.org/wiki/UK_railway_stations>wikipedia</a>
+          to find the 3-letter station code.
+        </td>
+      <tr>
+        <td><label for="station">Station (3-letter code):</label></td>
+        <td><input type="text" id="station" name="station" value="SKM" required></td>
+      </tr>
+      <tr>
+        <td><label for="destination">Destination (3-letter code):</label></td>
+        <td><input type="text" id="destination" name="destination" value="MYB" required></td>
+      </tr>
+      <tr>
+        <td><label for="min_departure_time:int">Minimum departure time (mins):</label></td>
+        <td><input type="text" id="min_departure_time:int" name="min_departure_time:int" value=0 required></td>
+      </tr>
+
+      <tr>
+        <th colspan=2>
+          <h2>Display Options</h2>
+        </th>
+      </tr>
+      <tr>
+        <td><label for="display[flip]:bool">Flip display:</label></td>
+        <td><input type="checkbox" id="display[flip]:bool" name="display[flip]:bool"></td>
+      </tr>
+      <tr>
+        <td><label for="display[refresh]:int">Refresh rate (per second):</label></td>
+        <td><input type="number" id="display[refresh]:int" name="display[refresh]:int" value=60 required></td>
+      </tr>
+      <tr>
+        <td><label for="display[scroll_speed]:int">Scroll speed (pixels per second):</label></td>
+        <td><input type="number" id="display[scroll_speed]:int" name="display[scroll_speed]:int" value=60 required></td>
+      </tr>
+
+      <tr>
+        <th colspan=2>
+          <h2>Logging</h2>
+        </th>
+      </tr>
+      <tr>
+        <td><label for="debug[log]:bool">Save debug logs:</label></td>
+        <td><input type="checkbox" id="debug[log]:bool" name="debug[log]:bool"></td>
+      </tr>
+      <tr>
+        <td colspan=2>
+          Optional: send the log somewhere it can be read without unplugging
+          the display. Paste the Authorization header from your Grafana Cloud
+          stack's OTLP page, and change the URL if that stack is in another
+          region. Leave the token blank and nothing is sent, unless this
+          display came with one.
+        </td>
+      </tr>
+      <tr>
+        <td><label for="otel[endpoint]">Log collector URL:</label></td>
+        <td>
+          <input type="text" id="otel[endpoint]" name="otel[endpoint]"
+                 value="https://otlp-gateway-prod-gb-south-1.grafana.net/otlp">
+        </td>
+      </tr>
+      <tr>
+        <td><label for="otel[auth]">Log collector token:</label></td>
+        <td>
+          <input type="password" id="otel[auth]" name="otel[auth]" placeholder="Basic ...">
+        </td>
+      </tr>
+    </table>
+  </details>
+
   <br>
-  <tr>
-    <td><input type="submit" value="Save Settings"></td>
-    <td>
-      <p id="result"></p>
-    </td>
-  </tr>
+  <input type="submit" value="Save Settings">
+  <p id="result"></p>
 </form>
 
 </html>

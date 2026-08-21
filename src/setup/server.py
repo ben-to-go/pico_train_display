@@ -23,6 +23,7 @@ import json
 import re
 
 import logging
+import setup
 from setup import content
 
 
@@ -175,8 +176,12 @@ async def _server_request(
 
   request_content = await _read_request(reader)
   if uri == '/':
+    page = content.data()
+    opener = setup.open_advanced()
+    if opener:
+      page = bytes(page) + opener
     await _write_response(
-        writer, 200, content=content.data(), content_type='text/html'
+        writer, 200, content=page, content_type='text/html'
     )
   elif uri == '/submit' and method == 'POST':
     try:
