@@ -316,3 +316,67 @@ class RequestsAtStartupTest(unittest.TestCase):
 
 
     self.assertEqual(1, self.slept, 'the backoff, not the whole interval')
+
+
+class WifiPowerSavingTest(unittest.TestCase):
+  """That the radio is told not to doze, and that saying so is not required.
+
+  The chip comes up in a power saving mode it has been seen to wedge in, and
+  bringing it up from cold resets the setting, so every connect has to ask
+  again rather than asking once at startup.
+  """
+
+  def setUp(self):
+    # main.logging, because this module deliberately keeps the standard
+    # library's logging out of sys.modules; src/logging.py is only reachable
+    # through what imported it.
+    self.logging = main.logging
+    self.lines = []
+    self.addCleanup(setattr, self.logging, '_write', self.logging._write)
+    self.logging._write = self.lines.append
+    self.addCleanup(setattr, main, 'network', main.network)
+
+  def test_power_saving_is_off_once_connected(self):
+    wlan = main._connect('net', 'pw')
+
+    self.assertIsNotNone(wlan)
+    self.assertEqual(main.network.WLAN.PM_NONE, wlan.config('pm'))
+
+  def test_every_connect_asks_again(self):
+    # Not once at startup: active(True) on a cold chip puts the default back,
+    # so a reconnect that skipped this would quietly re-enable power saving.
+    first = main._connect('net', 'pw')
+    first.active(False)
+    first.config(pm=main.network.WLAN.PM_PERFORMANCE)
+
+    second = main._connect('net', 'pw')
+
+    self.assertEqual(main.network.WLAN.PM_NONE, second.config('pm'))
+
+  def test_what_the_radio_reports_is_logged(self):
+    # Read back rather than echoed, so the log is evidence rather than intent.
+    main._connect('net', 'pw')
+
+    self.assertIn(
+        'Wifi power saving: pm={}'.format(main.network.WLAN.PM_NONE),
+        '\n'.join(self.lines))
+
+  def test_a_radio_that_refuses_still_connects(self):
+    # A port without the setting, or a chip that rejects it, is still a
+    # working display. Failing the connect here would send it to the setup
+    # screen instead.
+    class _Refuses(main.network.WLAN):
+
+      def config(self, *args, **kwargs):
+        if 'pm' in kwargs:
+          raise OSError('no such setting')
+        return super().config(*args, **kwargs)
+
+    main.network = types.SimpleNamespace(
+        STA_IF=main.network.STA_IF, WLAN=_Refuses)
+
+    wlan = main._connect('net', 'pw')
+
+    self.assertIsNotNone(wlan, 'the connect carried on')
+    self.assertIn(
+        'Could not turn off wifi power saving.', '\n'.join(self.lines))
