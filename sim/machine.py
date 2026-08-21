@@ -60,6 +60,23 @@ class RTC:
       return (t[0], t[1], t[2], t[6], t[3], t[4], t[5], 0)
 
 
+class WDT:
+  """A watchdog that watches nothing.
+
+  The firmware arms one on the way down, so that a board which cannot ship its
+  last log still reboots. There is no hardware timer here and nothing to
+  reboot, so this only records the timeout: the simulator wants to reach its
+  exit rather than be killed on the way to it.
+  """
+
+  def __init__(self, id=0, timeout=5000):
+    self.id = id
+    self.timeout = timeout
+
+  def feed(self):
+    pass
+
+
 def reset():
   raise SystemExit('machine.reset() called')
 

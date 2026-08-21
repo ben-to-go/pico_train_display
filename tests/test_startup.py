@@ -217,6 +217,7 @@ class RequestsAtStartupTest(unittest.TestCase):
     self.updates = 0
     self.slept = 0
     self.order = []
+    self.now_ms = 0
     test = self
 
     class _Updater:
@@ -233,6 +234,9 @@ class RequestsAtStartupTest(unittest.TestCase):
     def sleep(seconds):
       test.slept += seconds
       test.order.append('wait')
+      # run() measures how long since a board loaded off ticks_ms, so a
+      # stubbed sleep has to move the clock or nothing ever ages.
+      test.now_ms += seconds * 1000
 
     def send():
       test.order.append('send')
@@ -254,7 +258,10 @@ class RequestsAtStartupTest(unittest.TestCase):
     main.trains = types.SimpleNamespace(
         DepartureUpdater=_Updater, retry_wait=lambda e, n, interval: 1)
     main.otel = types.SimpleNamespace(send=send, install=lambda c: None)
-    main.time = types.SimpleNamespace(sleep=sleep)
+    main.time = types.SimpleNamespace(
+        sleep=sleep,
+        ticks_ms=lambda: test.now_ms,
+        ticks_diff=lambda a, b: a - b)
     main._thread = types.SimpleNamespace(
         allocate_lock=real_lock, start_new_thread=lambda *a, **k: None)
     # An associated radio, which the loop rechecks every time round.
@@ -380,3 +387,143 @@ class WifiPowerSavingTest(unittest.TestCase):
     self.assertIsNotNone(wlan, 'the connect carried on')
     self.assertIn(
         'Could not turn off wifi power saving.', '\n'.join(self.lines))
+
+
+class RebootWhenNothingLoadsTest(unittest.TestCase):
+  """That a display which stops loading boards eventually reboots itself.
+
+  The failure this exists for looks healthy from every angle the firmware used
+  to check: associated, addressed, isconnected() true, and not one packet
+  getting out. Only a fetch that works says the network is there, so how long
+  since the last one is what decides when to stop believing the radio.
+  """
+
+  def setUp(self):
+    for name in ('gc', 'display', 'trains', 'widgets', 'fonts', 'otel',
+                 'time', '_thread', '_connect', '_configure_time'):
+      self.addCleanup(setattr, main, name, getattr(main, name))
+
+    self.logging = main.logging
+    self.addCleanup(setattr, self.logging, '_write', self.logging._write)
+    self.logging._write = lambda msg: None
+
+    test = self
+    self.now_ms = 0
+    self.loads_left = 0
+    self.last_load_ms = None
+
+    class _Updater:
+
+      def __init__(self, *args, **kwargs):
+        pass
+
+      def update(self):
+        if test.loads_left > 0:
+          test.loads_left -= 1
+          test.last_load_ms = test.now_ms
+          return
+        # No errno, so this is not the ECONNABORTED case that reconnects on
+        # its own: nothing here reconnects except what the test asks for.
+        raise OSError('nothing gets out')
+
+    def sleep(seconds):
+      test.now_ms += seconds * 1000
+      # A backstop, so a deadline that never fires fails the test rather than
+      # looping until the runner gives up.
+      if test.now_ms // 1000 > main._REBOOT_AFTER * 4:
+        raise _Stop()
+
+    real_lock = _thread_module.allocate_lock
+    main.gc = types.SimpleNamespace(
+        collect=lambda: None, threshold=lambda *a: None,
+        mem_free=lambda: 1, mem_alloc=lambda: 1)
+    main.display = types.SimpleNamespace(
+        create=lambda *a, **k: types.SimpleNamespace(
+            close=lambda: None, fill=lambda *a: None, flush=lambda: None))
+    main.widgets = types.SimpleNamespace(
+        MessageWidget=lambda *a, **k: types.SimpleNamespace(
+            render=lambda *a, **k: None))
+    main.fonts = types.SimpleNamespace(
+        DEFAULT_FONT=object(), CLOCK_FONT=object())
+    # The real ceiling, so the deadline is reached in a handful of times round
+    # rather than in eighteen hundred.
+    main.trains = types.SimpleNamespace(
+        DepartureUpdater=_Updater, retry_wait=lambda e, n, interval: 600)
+    main.otel = types.SimpleNamespace(send=lambda: None, install=lambda c: None)
+    main.time = types.SimpleNamespace(
+        sleep=sleep,
+        ticks_ms=lambda: test.now_ms,
+        ticks_diff=lambda a, b: a - b)
+    main._thread = types.SimpleNamespace(
+        allocate_lock=real_lock, start_new_thread=lambda *a, **k: None)
+    # An associated radio all the way through, which is the whole point: this
+    # is what the old check believed and what the failure looks like.
+    main._connect = lambda *a, **k: types.SimpleNamespace(
+        isconnected=lambda: True)
+    main._configure_time = lambda: True
+
+  def _config(self):
+    return main.config_module.load(_VALID_CONFIG)
+
+  def test_it_reboots_once_nothing_has_loaded_for_long_enough(self):
+    with self.assertRaises(main._RadioIsGone):
+      main.run(self._config())
+
+  def test_it_does_not_reboot_before_the_deadline(self):
+    with self.assertRaises(main._RadioIsGone):
+      main.run(self._config())
+
+    self.assertGreaterEqual(self.now_ms // 1000, main._REBOOT_AFTER)
+
+  def test_a_board_that_keeps_loading_is_left_alone(self):
+    # The deadline runs from the last board that loaded, so a display that is
+    # working runs past it without rebooting.
+    self.loads_left = 10000
+
+    with self.assertRaises(_Stop):
+      main.run(self._config())
+
+    self.assertGreater(self.now_ms // 1000, main._REBOOT_AFTER,
+                       'ran well past the deadline it never reached')
+
+  def test_the_deadline_runs_from_the_last_load_not_from_boot(self):
+    # A display that worked for a while and then stopped gets the full half
+    # hour from when it stopped, rather than counting time it was fine.
+    self.loads_left = 4
+
+    with self.assertRaises(main._RadioIsGone):
+      main.run(self._config())
+
+    self.assertIsNotNone(self.last_load_ms, 'it loaded before it stopped')
+    self.assertGreaterEqual(
+        (self.now_ms - self.last_load_ms) // 1000, main._REBOOT_AFTER)
+
+
+class ShutdownWatchdogTest(unittest.TestCase):
+  """That the reboot happens even when the last log cannot be shipped."""
+
+  def setUp(self):
+    self.logging = main.logging
+    self.addCleanup(setattr, self.logging, '_write', self.logging._write)
+    self.lines = []
+    self.logging._write = self.lines.append
+    self.addCleanup(setattr, main, 'machine', main.machine)
+
+  def test_it_arms_a_watchdog_that_outlasts_the_send(self):
+    armed = []
+    main.machine = types.SimpleNamespace(
+        WDT=lambda timeout=None: armed.append(timeout))
+
+    main._arm_shutdown_watchdog()
+
+    self.assertEqual([main._SHUTDOWN_WATCHDOG_MS], armed)
+
+  def test_a_port_without_one_still_shuts_down(self):
+    def no_wdt(timeout=None):
+      raise AttributeError('no WDT on this port')
+
+    main.machine = types.SimpleNamespace(WDT=no_wdt)
+
+    main._arm_shutdown_watchdog()
+
+    self.assertIn('No shutdown watchdog', '\n'.join(self.lines))
