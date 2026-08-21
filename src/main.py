@@ -51,7 +51,7 @@ _SETUP_MESSAGE = (
     'Wifi: {}\nPassword: {}\nThen visit http://{}'
 )
 
-_CONNECT_TIMEOUT = 15
+_CONNECT_TIMEOUT = 30
 
 # How long a display goes without loading a board before it reboots. Nothing
 # short of a fetch working says the network is there: the radio can lose the
@@ -160,7 +160,13 @@ def _connect(
   logging.log('Connecting to SSID: {} PASSWORD: {}', ssid, '*' * len(password))
 
   try:
+    if hasattr(network, 'AP_IF'):
+      ap = network.WLAN(network.AP_IF)
+      if ap.active():
+        ap.active(False)
+
     wlan = network.WLAN(network.STA_IF)
+    wlan.active(False)
     wlan.active(True)
     _no_power_saving(wlan)
     wlan.connect(ssid, password if password else None)
@@ -182,7 +188,11 @@ def _connect(
     logging.exception(e)
     return None
 
-  logging.log('Failed to connect to wifi in {} secs', _CONNECT_TIMEOUT)
+  logging.log(
+      'Failed to connect to wifi in {} secs (status={})',
+      _CONNECT_TIMEOUT,
+      wlan.status(),
+  )
   return None
 
 
@@ -438,6 +448,7 @@ async def setup(screen: display.Display):
   screen.fill(0)
   screen.flush()
   await web_server.wait_closed()
+  ap.active(False)
 
 
 def _run_setup():
