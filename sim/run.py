@@ -48,6 +48,40 @@ def _divert_logging():
   logging._write = write
 
 
+def _too_small():
+  """Says how the window compares with the panel, or None if it fits.
+
+  The panel is 256 pixels across and the rendering spends a terminal cell on
+  each, so it wants 256 columns and 33 rows. Most windows start narrower, and
+  a narrow one used to wrap every row of pixels onto the next: 32 rows became
+  128, the screen scrolled continuously, and the board came out looking shred-
+  ded rather than merely cropped. Wrapping is off now, so it crops instead,
+  which is worth saying once rather than leaving someone to wonder where the
+  rest of the departures went.
+
+  The size comes in from run.sh, because MicroPython has no way to ask for it.
+  """
+  import os
+  import panel
+
+  columns = int(os.getenv('SIM_COLS') or 0)
+  rows = int(os.getenv('SIM_LINES') or 0)
+  if not columns or not rows:
+    return None
+
+  # A row for the cursor to land on after the last one, so the panel is not
+  # pushed up the screen by its own newline.
+  wants_columns, wants_rows = panel.WIDTH, panel.HEIGHT // 2 + 1
+  if columns >= wants_columns and rows >= wants_rows:
+    return None
+
+  return (
+      'The window is {}x{} and the panel wants {}x{}, so it was cropped. '
+      'Make the font smaller until it fits.'.format(
+          columns, rows, wants_columns, wants_rows)
+  )
+
+
 def main():
   import asyncio
   import network
@@ -60,14 +94,23 @@ def main():
 
   import main as firmware
 
-  sys.stdout.write('\x1b[2J\x1b[?25l')  # clear, hide the cursor
+  cramped = _too_small()
+
+  # Clear, hide the cursor, and stop the terminal wrapping. Every row of the
+  # panel is 256 cells wide, and a window narrower than that used to fold each
+  # one onto the row below, which shredded the picture rather than cropping it.
+  sys.stdout.write('\x1b[2J\x1b[?25l\x1b[?7l')
   try:
     firmware.main()
   except KeyboardInterrupt:
     pass
   finally:
-    sys.stdout.write('\x1b[?25h\n')
+    sys.stdout.write('\x1b[?7h\x1b[?25h\n')
     print('Firmware log: {}'.format(_LOG_PATH))
+    # After the panel rather than before it, because the clear above would
+    # have wiped it.
+    if cramped:
+      print(cramped)
 
 
 main()

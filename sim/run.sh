@@ -27,4 +27,10 @@ export TZ=UTC
 # Somewhere to keep the API token out of config.json while developing.
 if [[ -f .env ]]; then set -a; . ./.env; set +a; fi
 
+# How big the window is. MicroPython has no way to ask, and the panel wants
+# 256 columns, which is wider than a terminal starts out: run.py says so rather
+# than leaving someone looking at a board with most of it off the side.
+export SIM_COLS="$(tput cols 2>/dev/null || echo 0)"
+export SIM_LINES="$(tput lines 2>/dev/null || echo 0)"
+
 exec "$MICROPYTHON" sim/run.py
