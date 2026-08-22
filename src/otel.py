@@ -42,6 +42,7 @@ import time
 
 import logging
 import trains
+import wal
 
 
 # The board counts seconds from 2000 and a desktop from 1970. OTLP wants the
@@ -119,7 +120,7 @@ _sink = None
 
 
 def _payload(lines, now: int) -> str:
-  """A batch of (when, severity, line) as OTLP/JSON.
+  """A batch of (when, severity, line, [run_id]) as OTLP/JSON.
 
   Lines logged before NTP answered carry a reading from whenever the port
   thinks it booted, which a collector drops as far too old: a Pico has no
@@ -129,54 +130,72 @@ def _payload(lines, now: int) -> str:
   clock, in the order it happened. Whichever epoch the port booted at cancels
   out of the subtraction.
   """
-  before = [when for when, _, _ in lines if when < _CLOCK_IS_SET]
-  real = [when for when, _, _ in lines if when >= _CLOCK_IS_SET]
-  anchor = 0
-  if before:
-    anchor = (min(real) if real else now) - max(before)
+  by_run = {}
+  for entry in lines:
+    when, severity, line = entry[0], entry[1], entry[2]
+    run_id = entry[3] if len(entry) > 3 else RUN_ID
+    by_run.setdefault(run_id, []).append((when, severity, line))
 
-  records = [
-      {
-          'timeUnixNano': '{}000000000'.format(
-              when if when >= _CLOCK_IS_SET else when + anchor
-          ),
-          'severityText': severity,
-          'severityNumber': _SEVERITY_NUMBER[severity],
-          'body': {'stringValue': line},
-      }
-      for when, severity, line in lines
-  ]
-  return json.dumps({
-      'resourceLogs': [{
-          'resource': {
-              'attributes': [
-                  {
-                      'key': 'service.name',
-                      'value': {'stringValue': SERVICE_NAME},
-                  },
-                  {
-                      'key': _ENVIRONMENT_KEY,
-                      'value': {'stringValue': ENVIRONMENT},
-                  },
-                  {
-                      'key': _RUN_KEY,
-                      'value': {'stringValue': RUN_ID},
-                  },
-              ],
-          },
-          'scopeLogs': [{'logRecords': records}],
-      }],
-  })
+  resource_logs = []
+  for run_id, run_lines in by_run.items():
+    before = [when for when, _, _ in run_lines if when < _CLOCK_IS_SET]
+    real = [when for when, _, _ in run_lines if when >= _CLOCK_IS_SET]
+    anchor = 0
+    if before:
+      anchor = (min(real) if real else now) - max(before)
+
+    records = [
+        {
+            'timeUnixNano': '{}000000000'.format(
+                when if when >= _CLOCK_IS_SET else when + anchor
+            ),
+            'severityText': severity,
+            'severityNumber': _SEVERITY_NUMBER[severity],
+            'body': {'stringValue': line},
+        }
+        for when, severity, line in run_lines
+    ]
+    resource_logs.append({
+        'resource': {
+            'attributes': [
+                {
+                    'key': 'service.name',
+                    'value': {'stringValue': SERVICE_NAME},
+                },
+                {
+                    'key': _ENVIRONMENT_KEY,
+                    'value': {'stringValue': ENVIRONMENT},
+                },
+                {
+                    'key': _RUN_KEY,
+                    'value': {'stringValue': run_id},
+                },
+            ],
+        },
+        'scopeLogs': [{'logRecords': records}],
+    })
+
+  return json.dumps({'resourceLogs': resource_logs})
 
 
 class Sink:
   """Holds recent log lines and sends them to the collector in batches."""
 
-  def __init__(self, endpoint: str, auth: str):
+  def __init__(self, endpoint: str, auth: str, wal_path: str = wal.DEFAULT_PATH):
     self._url = endpoint.rstrip('/') + '/v1/logs'
     self._auth = auth
+    self._wal_path = wal_path
     self._lines = []
     self._failed = False
+
+    # Load un-shipped logs persisted across reboots
+    persisted = wal.load(self._wal_path)
+    for item in persisted:
+      if isinstance(item, (list, tuple)) and len(item) >= 3:
+        run_id = item[3] if len(item) > 3 else RUN_ID
+        self._lines.append((item[0], item[1], item[2], run_id))
+    if len(self._lines) > _MAX_LINES:
+      self._lines = self._lines[-_MAX_LINES:]
 
   def write(self, text: str, severity: str = logging.INFO):
     """Buffers a log line. Called from whichever core did the logging.
@@ -193,7 +212,7 @@ class Sink:
         continue
       if len(self._lines) >= _MAX_LINES:
         self._lines.pop(0)
-      self._lines.append((when, severity, line))
+      self._lines.append((when, severity, line, RUN_ID))
 
   def send(self) -> bool:
     """Sends what has been logged since the last call. Never raises.
@@ -220,13 +239,20 @@ class Sink:
     except Exception as e:
       # Not worth interrupting the departures for, let alone resetting over.
       self._lines = (lines + self._lines)[-_MAX_LINES:]
+      wal.save(self._lines, self._wal_path)
       if not self._failed:
         self._failed = True
         logging.log('Could not reach the log collector: {}', e)
       return False
 
+    wal.clear(self._wal_path)
     self._failed = False
     return True
+
+  def flush_wal(self):
+    """Saves unsent lines to disk on shutdown so they survive resets."""
+    if self._lines:
+      wal.save(self._lines, self._wal_path)
 
   def _post(self, payload: str):
     response = trains.http_request(
@@ -269,3 +295,9 @@ def send():
   """
   if _sink is not None:
     _sink.send()
+
+
+def flush_wal():
+  """Flushes unsent logs to disk on shutdown. Safe no-op if disabled."""
+  if _sink is not None:
+    _sink.flush_wal()
