@@ -83,19 +83,22 @@ def _blast(buf: ptr8, count: int, pad: int):
   i = 0
   while i < count:
     b = int(buf[i])
-    # 1. Clear data bus GP0-GP7 while strobe (GP8) remains HIGH:
+    # 1. Put data byte onto GP0-GP7 while strobe (GP8) is HIGH:
     clr_reg[0] = 0xFF
-    # 2. Put data byte bits onto GP0-GP7 (strobe is still HIGH, settling data):
     if b != 0:
       set_reg[0] = b
-    # 3. Pull write strobe GP8 LOW:
+    set_reg[0] = 0x100
+
+    # 2. Pull write strobe GP8 LOW:
     clr_reg[0] = 0x100
-    # 4. Hold strobe LOW for minimum pulse width (>= 60ns):
+
+    # 3. Hold strobe LOW for minimum pulse width (Table 13-3: >= 60ns):
     j = 0
     while j < pad:
       clr_reg[0] = 0x100  # Strobe hold / delay
       j += 1
-    # 5. Pull write strobe GP8 HIGH (rising edge latches data into SSD1322):
+
+    # 4. Pull write strobe GP8 HIGH (rising edge latches data into SSD1322):
     set_reg[0] = 0x100
     i += 1
 
@@ -110,7 +113,8 @@ def _measure_pad() -> int:
   """
   scratch = bytearray(_CALIBRATION_BYTES)
 
-  pad = 1
+  # Start with pad=10 to guarantee >= 60ns low pulse width at 150MHz
+  pad = 10
   while pad < _MAX_PAD:
     start = time.ticks_us()
     _blast(scratch, _CALIBRATION_BYTES, pad)
