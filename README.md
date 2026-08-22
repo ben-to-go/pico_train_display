@@ -20,6 +20,8 @@ beside it: [docs/display-format.md](docs/display-format.md).
 - Set up from your phone. Moving house does not mean reflashing it.
 - [Keeps showing departures](docs/fallback.md) when the wifi or the API
   drops out.
+- [Remote observability & logging](docs/observability.md) via OpenTelemetry
+  and Grafana Cloud Loki.
 - Two boards and fifteen wires. Nothing to solder, nothing to print.
 
 ## Installation
