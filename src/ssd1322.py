@@ -26,6 +26,24 @@ import framebuf
 import display
 
 
+def _find_changed_rows(
+    new_buf, old_buf, row_bytes: int, rows: int
+) -> tuple[int, int] | None:
+  """Finds first and last row where new_buf and old_buf differ."""
+  first = -1
+  last = -1
+  for r in range(rows):
+    start = r * row_bytes
+    stop = start + row_bytes
+    if new_buf[start:stop] != old_buf[start:stop]:
+      if first < 0:
+        first = r
+      last = r
+  if first < 0:
+    return None
+  return first, last
+
+
 class SSD1322(display.Display):
   """SSD1322 driver, talking to the panel over an 8080 8-bit parallel bus."""
 
@@ -44,6 +62,8 @@ class SSD1322(display.Display):
     self._width = width
     self._height = height
     self._buffer = bytearray(self._width // 2 * self._height)
+    self._shadow = bytearray(len(self._buffer))
+    self._all_dirty = True
 
     super().__init__(self._buffer, width, height, framebuf.GS4_HMSB)
     self.fill(0)
@@ -113,10 +133,33 @@ class SSD1322(display.Display):
     self._bus.write(data, 1)
 
   def flush(self):
+    """Sends the rows that have changed, and nothing else.
+
+    A whole frame is 8,192 bytes, which at 300ns a byte takes 2.5ms. The panel
+    carries on scanning out to the glass while being written, so sending only
+    the modified rows (e.g. 9 rows for scrolling text = 1,152 bytes) shrinks
+    the tearing collision window by ~86%.
+    """
+    row_bytes = self._width // 2
+    if self._all_dirty:
+      first, last = 0, self._height - 1
+      self._all_dirty = False
+    else:
+      changed = _find_changed_rows(
+          self._buffer, self._shadow, row_bytes, self._height
+      )
+      if changed is None:
+        return
+      first, last = changed
+
+    start = first * row_bytes
+    stop = (last + 1) * row_bytes
+
     offset = (480 - self._width) // 2
     col_start = offset // 4
     col_end = col_start + self.width // 4 - 1
     self.write_cmd(0x15, col_start, col_end)
-    self.write_cmd(0x75, 0, self._height - 1)
+    self.write_cmd(0x75, first, last)
     self.write_cmd(0x5C)
-    self.write_data(self._buffer)
+    self.write_data(self._buffer[start:stop])
+    self._shadow[start:stop] = self._buffer[start:stop]
