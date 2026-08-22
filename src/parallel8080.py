@@ -103,7 +103,7 @@ def _blast(buf: ptr8, count: int, pad: int):
 
 
 
-def _measure_pad() -> int:
+def _measure_pad() -> tuple[int, int]:
   """Finds the smallest pad that makes a byte take the datasheet's 300ns.
 
   Measured rather than worked out on paper, because it depends on the core
@@ -114,14 +114,16 @@ def _measure_pad() -> int:
   scratch = bytearray(_CALIBRATION_BYTES)
 
   pad = 1
+  ns_per_byte = 0
   while pad < _MAX_PAD:
     start = time.ticks_us()
     _blast(scratch, _CALIBRATION_BYTES, pad)
     elapsed_ns = time.ticks_diff(time.ticks_us(), start) * 1000
-    if elapsed_ns // _CALIBRATION_BYTES >= _CYCLE_NS:
-      return pad
+    ns_per_byte = elapsed_ns // _CALIBRATION_BYTES
+    if ns_per_byte >= _CYCLE_NS:
+      return pad, ns_per_byte
     pad += 1
-  return _MAX_PAD
+  return _MAX_PAD, ns_per_byte
 
 
 class ParallelBus:
@@ -139,12 +141,15 @@ class ParallelBus:
     self._rst = machine.Pin(_RST_PIN, machine.Pin.OUT, value=1)
     self._cs = machine.Pin(_CS_PIN, machine.Pin.OUT, value=1)
 
-    self._pad = _measure_pad()
+    self._pad, ns_per_byte = _measure_pad()
     logging.log(
-        'Display bus: {} pad stores a byte, {}MHz core',
+        'Display bus: {} pad stores a byte ({}ns/byte, target >={}ns), {}MHz core',
         self._pad,
+        ns_per_byte,
+        _CYCLE_NS,
         machine.freq() // 1_000_000,
     )
+
 
   def reset(self):
     """Pulses the panel's reset line and waits for it to come back."""

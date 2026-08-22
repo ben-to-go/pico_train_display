@@ -24,6 +24,7 @@ Datasheet: https://www.hpinfotech.ro/SSD1322.pdf
 import framebuf
 
 import display
+import logging
 
 
 def _find_changed_rows(
@@ -71,6 +72,12 @@ class SSD1322(display.Display):
     self._init_display(flip_display)
 
   def _init_display(self, flip_display: bool):
+    logging.log(
+        'Initializing SSD1322 OLED panel ({}x{}, flip={})...',
+        self._width,
+        self._height,
+        flip_display,
+    )
     self._bus.reset()
 
     # fmt: off
@@ -104,6 +111,8 @@ class SSD1322(display.Display):
 
     self.fill(0)
     self.flush()
+    logging.log('SSD1322 OLED panel ready and display on.')
+
 
   @property
   def width(self) -> int:
