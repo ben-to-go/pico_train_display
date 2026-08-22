@@ -69,14 +69,19 @@ gc.collect()
 
 
 def _log_memory():
-  """Reports what memory is left, to stdout and to the log.
-
-  mem_info() writes its map straight to stdout, where only a serial cable can
-  read it. The two numbers worth watching from a distance go through the log
-  as well, which is the only route off the display.
-  """
+  """Reports heap free, allocated, and total capacity to stdout and logs."""
   micropython.mem_info()
-  logging.log('Memory: {} free, {} allocated', gc.mem_free(), gc.mem_alloc())
+  free = gc.mem_free()
+  alloc = gc.mem_alloc()
+  total = free + alloc
+  pct = (alloc / total * 100) if total > 0 else 0
+  logging.log(
+      'Memory: {} free, {} allocated ({} total, {:.1f}% used)',
+      free,
+      alloc,
+      total,
+      pct,
+  )
 
 
 class _NeedsSetup(Exception):
@@ -170,10 +175,8 @@ def _render_thread(
       start = time.ticks_us()
 
       if main_display.render(utils.get_uk_time()):
-        gc.collect()
         screen.flush()
 
-      gc.collect()
       elapsed = time.ticks_diff(time.ticks_us(), start)
       sleep_for = refresh_rate_us - elapsed
       if sleep_for > 0:
@@ -295,6 +298,7 @@ def run(config: config_module.Config):
       try:
         departure_updater.update()
         gc.collect()
+        _log_memory()
         failures = 0
         wait = update_interval
         last_loaded = time.ticks_ms()
