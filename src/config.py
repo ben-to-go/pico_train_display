@@ -166,26 +166,40 @@ def _parse_known_wifi(raw: str | list | None) -> list[tuple[str, str]]:
 
   if isinstance(raw, str):
     raw = raw.strip()
+    if (raw.startswith('"') and raw.endswith('"')) or (
+        raw.startswith("'") and raw.endswith("'")
+    ):
+      raw = raw[1:-1].strip()
+
     if raw.startswith('[') and raw.endswith(']'):
       try:
         import json
         return _parse_known_wifi(json.loads(raw))
       except Exception:
         pass
+
     networks = []
     for entry in raw.split(','):
       entry = entry.strip()
       if not entry:
         continue
+      if (entry.startswith('"') and entry.endswith('"')) or (
+          entry.startswith("'") and entry.endswith("'")
+      ):
+        entry = entry[1:-1].strip()
       if ':' in entry:
         ssid, pw = entry.split(':', 1)
       else:
         ssid, pw = entry, ''
-      if ssid.strip():
-        networks.append((ssid.strip(), pw.strip()))
+      ssid = ssid.strip().strip('"\'')
+      pw = pw.strip().strip('"\'')
+      if ssid:
+        networks.append((ssid, pw))
     return networks
 
+
   return []
+
 
 
 class WifiConfig:
