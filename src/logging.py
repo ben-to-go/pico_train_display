@@ -56,7 +56,7 @@ def _write(msg: str):
   print(msg)
 
 
-def _log_message(prefix: str, msg, *args, **kwargs):
+def _log_message(prefix: str, msg, *args, severity: str = INFO, **kwargs):
   args = args or []
   kwargs = kwargs or {}
   msg = str(msg).format(*args, **kwargs)
@@ -65,13 +65,19 @@ def _log_message(prefix: str, msg, *args, **kwargs):
     # Without the prefix. Whatever the line is shipped to stamps it, and a
     # board that has not reached NTP yet would be putting 00:00:00 next to
     # a perfectly good timestamp from the other end.
-    _sink.write(msg)
+    _sink.write(msg, severity)
 
 
 def log(msg, *args, **kwargs):
   now = time.localtime()
   prefix = '[{:0>2}:{:0>2}:{:0>2}]'.format(now[3], now[4], now[5])
-  _log_message(prefix, msg, *args, **kwargs)
+  _log_message(prefix, msg, *args, severity=INFO, **kwargs)
+
+
+def error(msg, *args, **kwargs):
+  now = time.localtime()
+  prefix = '[{:0>2}:{:0>2}:{:0>2}]'.format(now[3], now[4], now[5])
+  _log_message(prefix, msg, *args, severity=ERROR, **kwargs)
 
 
 def exception(e):

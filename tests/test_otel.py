@@ -339,6 +339,11 @@ class CaptureTest(_SinkTestCase):
     self.assertEqual(['Starting...'], self.lines())
     self.assertTrue(written[0].endswith('] Starting...'), written)
 
+  def test_error_logs_reach_the_sink_with_error_severity(self):
+    logging.error('Failed to connect: {}', 'timeout')
+    self.assertEqual(['Failed to connect: timeout'], self.lines())
+    self.assertEqual(logging.ERROR, self.sink._lines[0][1])
+
   def test_tracebacks_reach_the_sink_too(self):
     # The whole point: sys.print_exception() writes straight to stdout, where
     # nothing but a serial cable can see it.

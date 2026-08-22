@@ -242,7 +242,7 @@ class Sink:
       wal.save(self._lines, self._wal_path)
       if not self._failed:
         self._failed = True
-        logging.log('Could not reach the log collector: {}', e)
+        logging.error('Could not reach the log collector: {}', e)
       return False
 
     wal.clear(self._wal_path)

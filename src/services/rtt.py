@@ -83,7 +83,7 @@ def get_json(
         ssl_context=ssl_context,
     )
   except Exception as e:
-    logging.log('API GET {} failed: {}', url, e)
+    logging.error('API GET {} failed: {}', url, e)
     raise
 
   logging.log('API GET {} -> {}', url, response.status_code)
