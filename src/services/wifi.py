@@ -24,25 +24,12 @@ import time
 try:
   import network
 except ImportError:
-  import sys
-  # For desktop test runs or simulator where network mock exists
-  network = sys.modules.get('network')
+  network = None
+
 
 import logging
-import sys
 
 _DEFAULT_TIMEOUT = 15
-
-
-def _log(msg: str, *args) -> None:
-  mod = sys.modules.get('logging', logging)
-  mod.log(msg, *args)
-
-
-def _log_exc(e: Exception) -> None:
-  mod = sys.modules.get('logging', logging)
-  if hasattr(mod, 'exception'):
-    mod.exception(e)
 
 
 def _no_power_saving(wlan, network_module=None) -> None:
@@ -50,10 +37,11 @@ def _no_power_saving(wlan, network_module=None) -> None:
   net = network_module if network_module is not None else network
   try:
     wlan.config(pm=net.WLAN.PM_NONE)
-    _log('Wifi power saving: pm={}', wlan.config('pm'))
+    logging.log('Wifi power saving: pm={}', wlan.config('pm'))
   except Exception as e:
-    _log('Could not turn off wifi power saving.')
-    _log_exc(e)
+    logging.log('Could not turn off wifi power saving.')
+    logging.exception(e)
+
 
 
 def wifi_status_desc(status: int) -> str:
@@ -80,7 +68,7 @@ def connect(
 ):
   """Associates with the configured Wi-Fi network, returning WLAN on success."""
   net = network_module if network_module is not None else network
-  _log('Connecting to SSID: {} PASSWORD: {}', ssid, '*' * len(password))
+  logging.log('Connecting to SSID: {} PASSWORD: {}', ssid, '*' * len(password))
 
   try:
     if hasattr(net, 'AP_IF'):
@@ -97,11 +85,16 @@ def connect(
     for i in range(timeout):
       if wlan.isconnected():
         ifc = wlan.ifconfig()
-        _log('Connected! IP: {}, Gateway: {}, DNS: {}', ifc[0], ifc[2], ifc[3])
+        logging.log(
+            'Connected! IP: {}, Gateway: {}, DNS: {}',
+            ifc[0],
+            ifc[2],
+            ifc[3],
+        )
         return wlan
 
       if wlan.status() < 0:
-        _log(
+        logging.log(
             'Wifi link failure: status={} ({}), retrying...',
             wlan.status(),
             wifi_status_desc(wlan.status()),
@@ -120,8 +113,8 @@ def connect(
         on_progress(i)
       time.sleep(1)
   except Exception as e:
-    _log('Wifi connect failed!')
-    _log_exc(e)
+    logging.log('Wifi connect failed!')
+    logging.exception(e)
     return None
 
   logging.log(
@@ -155,8 +148,8 @@ def scan_networks(network_module=None) -> list[str]:
         ssids.append(name)
     return ssids
   except Exception as e:
-    _log('Could not scan for wifi networks.')
-    _log_exc(e)
+    logging.log('Could not scan for wifi networks.')
+    logging.exception(e)
     return []
 
 
@@ -171,7 +164,7 @@ async def setup_access_point(
   ap = net.WLAN(net.AP_IF)
   ap.config(ssid=ssid, password=password)
   ap.active(True)
-  _log('Creating AP wifi with SSID: {}', ssid)
+  logging.log('Creating AP wifi with SSID: {}', ssid)
 
   for _ in range(timeout):
     if ap.active():
@@ -181,3 +174,4 @@ async def setup_access_point(
   raise OSError(
       'Failed to bring up access point in {} secs'.format(timeout)
   )
+

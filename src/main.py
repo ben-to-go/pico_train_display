@@ -136,14 +136,10 @@ def _scan_networks() -> list[str]:
   return wifi.scan_networks(network_module=network)
 
 
-def _no_power_saving(wlan):
-  """Disables Wi-Fi power saving mode."""
-  return wifi._no_power_saving(wlan, network_module=network)
-
-
 def _configure_time() -> bool:
   """Synchronizes RTC time via NTP."""
   return ntp.sync_time(timeout=_CONNECT_TIMEOUT)
+
 
 
 def _render_thread(

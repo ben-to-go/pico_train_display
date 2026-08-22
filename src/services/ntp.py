@@ -23,8 +23,8 @@ import time
 try:
   import ntptime
 except ImportError:
-  import sys
-  ntptime = sys.modules.get('ntptime')
+  ntptime = None
+
 
 import logging
 

@@ -413,7 +413,10 @@ class WifiPowerSavingTest(unittest.TestCase):
     self.lines = []
     self.addCleanup(setattr, self.logging, '_write', self.logging._write)
     self.logging._write = self.lines.append
+    self.addCleanup(setattr, main.wifi, 'logging', main.wifi.logging)
+    main.wifi.logging = self.logging
     self.addCleanup(setattr, main, 'network', main.network)
+
 
   def test_power_saving_is_off_once_connected(self):
     wlan = main._connect('net', 'pw')
