@@ -147,5 +147,48 @@ class ClockTest(unittest.TestCase):
     self.assertEqual(52, clock.bounds()[0])
 
 
+class ScrollingTextWidgetTest(unittest.TestCase):
+
+  class _Screen:
+    def __init__(self):
+      self.rects = []
+    def fill_rect(self, x, y, w, h, colour):
+      self.rects.append((x, y, w, h, colour))
+
+  class _Font:
+    def calculate_bounds(self, text):
+      return len(text) * 6, 9
+    def render_text(self, text, _screen, x, y):
+      pass
+
+  def test_static_text_renders_once_and_skips_subsequent_frames(self):
+    screen = self._Screen()
+    font = self._Font()
+    widget = widgets.ScrollingTextWidget(screen, font, label='Label: ')
+    widget.set_text('Short')
+
+    # First render returns True
+    self.assertTrue(widget.render(0, 0, 200, 9))
+    # Subsequent render without text change returns False (zero bus write / zero flicker)
+    self.assertFalse(widget.render(0, 0, 200, 9))
+
+  def test_scrolling_text_skips_frames_until_pixel_advances(self):
+    screen = self._Screen()
+    font = self._Font()
+    # 12 px/sec
+    widget = widgets.ScrollingTextWidget(screen, font, label='Calling at: ', pixels_per_second=12)
+    widget.set_text('A very long station list that definitely overflows the narrow window width')
+
+    # First render draws initial frame
+    self.assertTrue(widget.render(0, 0, 50, 9))
+
+    # Immediate next frame (<1ms elapsed, scroll did not change integer pixel) -> returns False
+    self.assertFalse(widget.render(0, 0, 50, 9))
+
+    # Simulate advancing time by 100ms (12 px/s * 0.1s = 1.2px) -> returns True
+    widget._scrolled_at -= 100
+    self.assertTrue(widget.render(0, 0, 50, 9))
+
+
 if __name__ == '__main__':
   unittest.main()
