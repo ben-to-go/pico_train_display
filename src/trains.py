@@ -107,18 +107,74 @@ def _to_epoch(timestamp: str) -> int:
   ))
 
 
+import services.rtt as rtt
 from services.rtt import (
     fallback_calling_points,
     fallback_departures,
-    get_access_token,
-    get_calling_points,
-    get_departures,
     lineup_url as _lineup_url,
     parse_calling_points,
     parse_departures,
     to_epoch as _to_epoch,
     to_hhmm as _to_hhmm,
 )
+
+
+def _get_json(url: str, access_token: str, buffer=None, ssl_context=None):
+  rtt.http_request = http_request
+  return rtt.get_json(url, access_token, buffer, ssl_context)
+
+
+def get_access_token(
+    endpoint: str,
+    refresh_token: str,
+    *,
+    buffer: memoryview | None = None,
+    ssl_context: ssl.SSLContext | None = None,
+) -> str:
+  return _get_json(
+      endpoint + '/api/get_access_token', refresh_token, buffer, ssl_context
+  )['token']
+
+
+def get_departures(
+    station: str,
+    destination: str,
+    access_token: str,
+    endpoint: str,
+    *,
+    min_departure_time: int = 0,
+    buffer: memoryview | None = None,
+    ssl_context: ssl.SSLContext | None = None,
+) -> Station:
+  return parse_departures(
+      _get_json(
+          _lineup_url(endpoint, station, destination),
+          access_token,
+          buffer,
+          ssl_context,
+      ),
+      min_departure_time,
+  )
+
+
+def get_calling_points(
+    identity: str,
+    station: str,
+    access_token: str,
+    endpoint: str,
+    *,
+    buffer: memoryview | None = None,
+    ssl_context: ssl.SSLContext | None = None,
+) -> tuple[str, ...]:
+  return parse_calling_points(
+      _get_json(
+          endpoint + '/rtt/service?uniqueIdentity=' + identity,
+          access_token,
+          buffer,
+          ssl_context,
+      ),
+      station,
+  )
 
 
 class DepartureUpdater:

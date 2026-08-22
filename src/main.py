@@ -144,7 +144,6 @@ from services import ntp, wifi
 
 
 def _connect(ssid: str, password: str, screen: display.Display | None = None):
-  wifi.network = network
   widget = (
       widgets.MessageWidget(screen, _WIFI_CONNECT, fonts.DEFAULT_FONT)
       if screen is not None
@@ -157,18 +156,20 @@ def _connect(ssid: str, password: str, screen: display.Display | None = None):
       screen.flush()
 
   return wifi.connect(
-      ssid, password, timeout=_CONNECT_TIMEOUT, on_progress=_progress
+      ssid,
+      password,
+      timeout=_CONNECT_TIMEOUT,
+      on_progress=_progress,
+      network_module=network,
   )
 
 
 def _scan_networks() -> list[str]:
-  wifi.network = network
-  return wifi.scan_networks()
+  return wifi.scan_networks(network_module=network)
 
 
 def _no_power_saving(wlan):
-  wifi.network = network
-  return wifi._no_power_saving(wlan)
+  return wifi._no_power_saving(wlan, network_module=network)
 
 
 def _configure_time() -> bool:
@@ -360,9 +361,12 @@ def run(config: config_module.Config):
 
 async def setup(screen: display.Display):
   event = asyncio.Event()
-  ssids = wifi.scan_networks()
+  ssids = wifi.scan_networks(network_module=network)
   ap = await wifi.setup_access_point(
-      _SETUP_WIFI_SSID, _SETUP_WIFI_PASSWORD, timeout=_CONNECT_TIMEOUT
+      _SETUP_WIFI_SSID,
+      _SETUP_WIFI_PASSWORD,
+      timeout=_CONNECT_TIMEOUT,
+      network_module=network,
   )
   ip_address = ap.ifconfig()[0]
 

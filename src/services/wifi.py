@@ -33,10 +33,11 @@ import logging
 _DEFAULT_TIMEOUT = 15
 
 
-def _no_power_saving(wlan):
+def _no_power_saving(wlan, network_module=None) -> None:
   """Turns power saving off on chips with CYW43439-style PM modes."""
+  net = network_module if network_module is not None else network
   try:
-    wlan.config(pm=network.WLAN.PM_NONE)
+    wlan.config(pm=net.WLAN.PM_NONE)
     logging.log('Wifi power saving: pm={}', wlan.config('pm'))
   except Exception as e:
     logging.log('Could not turn off wifi power saving.')
@@ -63,21 +64,22 @@ def connect(
     *,
     timeout: int = _DEFAULT_TIMEOUT,
     on_progress=None,
-    screen=None,
+    network_module=None,
 ):
   """Associates with the configured Wi-Fi network, returning WLAN on success."""
+  net = network_module if network_module is not None else network
   logging.log('Connecting to SSID: {} PASSWORD: {}', ssid, '*' * len(password))
 
   try:
-    if hasattr(network, 'AP_IF'):
-      ap = network.WLAN(network.AP_IF)
+    if hasattr(net, 'AP_IF'):
+      ap = net.WLAN(net.AP_IF)
       if ap.active():
         ap.active(False)
 
-    wlan = network.WLAN(network.STA_IF)
+    wlan = net.WLAN(net.STA_IF)
     wlan.active(False)
     wlan.active(True)
-    _no_power_saving(wlan)
+    _no_power_saving(wlan, network_module=net)
     wlan.connect(ssid, password if password else None)
 
     for i in range(timeout):
@@ -98,7 +100,10 @@ def connect(
           wlan.disconnect()
         except Exception:
           pass
-        time.sleep_ms(200)
+        if hasattr(time, 'sleep_ms'):
+          time.sleep_ms(200)
+        else:
+          time.sleep(0.2)
         wlan.connect(ssid, password if password else None)
 
       if on_progress is not None:
@@ -118,10 +123,11 @@ def connect(
   return None
 
 
-def scan_networks() -> list[str]:
+def scan_networks(network_module=None) -> list[str]:
   """Finds nearby Wi-Fi network SSIDs, sorted by signal strength."""
+  net = network_module if network_module is not None else network
   try:
-    sta = network.WLAN(network.STA_IF)
+    sta = net.WLAN(net.STA_IF)
     sta.active(True)
     results = sta.scan()
     ssids = []
@@ -145,10 +151,11 @@ def scan_networks() -> list[str]:
 
 
 async def setup_access_point(
-    ssid: str, password: str, timeout: int = _DEFAULT_TIMEOUT
+    ssid: str, password: str, timeout: int = _DEFAULT_TIMEOUT, network_module=None
 ):
   """Brings up an Access Point for configuration portal provisioning."""
-  ap = network.WLAN(network.AP_IF)
+  net = network_module if network_module is not None else network
+  ap = net.WLAN(net.AP_IF)
   ap.config(ssid=ssid, password=password)
   ap.active(True)
   logging.log('Creating AP wifi with SSID: {}', ssid)

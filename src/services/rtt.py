@@ -27,8 +27,10 @@ import fallback
 import logging
 from models import Departure, Station
 from net.errors import AuthError, RateLimitError
-from net.http import http_request
+import net.http as http
 import utils
+
+http_request = http.http_request
 
 _REQUEST_TIMEOUT = 15
 _TIME_WINDOW_MINS = 180
