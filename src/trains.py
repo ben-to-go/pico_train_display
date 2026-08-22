@@ -21,35 +21,23 @@
 import ssl
 
 import logging
-from models import BoardSnapshot, Departure, Response, Station
+from models import Departure, Response, Station
 from net.errors import AuthError, RateLimitError
-from net.http import http_request
+import net.http as http
 import services.rtt as rtt
 from services.rtt import (
     fallback_calling_points,
     fallback_departures,
-    lineup_url as _lineup_url,
+    lineup_url,
     parse_calling_points,
     parse_departures,
-    to_epoch as _to_epoch,
-    to_hhmm as _to_hhmm,
+    to_epoch,
+    to_hhmm,
 )
 from state import StateController
 
-_REQUEST_TIMEOUT = 15
-_MAXRESPONSE_SIZE = 40 * 1024
-_TIME_WINDOW_MINS = 180
-
-def retry_wait(error: Exception, interval: int) -> int:
-  """How long to leave it after a failed update.
-
-  A 429 answers the question itself: the API sends the seconds to wait.
-  For other API errors (5xx, 4xx, bad JSON), we wait the nominal interval (e.g. 120s)
-  so we retry quietly without rebooting or spamming the server.
-  """
-  if isinstance(error, RateLimitError):
-    return max(interval, error.retry_after)
-  return interval
+# Expose http_request for tests that patch trains.http_request
+http_request = http.http_request
 
 
 def _get_json(url: str, access_token: str, buffer=None, ssl_context=None):
@@ -81,7 +69,7 @@ def get_departures(
 ) -> Station:
   return parse_departures(
       _get_json(
-          _lineup_url(endpoint, station, destination),
+          lineup_url(endpoint, station, destination),
           access_token,
           buffer,
           ssl_context,
@@ -110,8 +98,26 @@ def get_calling_points(
   )
 
 
+_MAXRESPONSE_SIZE = 40 * 1024
+
+
+
+
+def retry_wait(error: Exception, interval: int) -> int:
+  """How long to leave it after a failed update.
+
+  A 429 answers the question itself: the API sends the seconds to wait.
+  For other API errors (5xx, 4xx, bad JSON), we wait the nominal interval (e.g. 120s)
+  so we retry quietly without rebooting or spamming the server.
+  """
+  if isinstance(error, RateLimitError):
+    return max(interval, error.retry_after)
+  return interval
+
+
 class DepartureUpdater:
   """Class that updates departures for a given station periodically."""
+
 
   def __init__(
       self,
