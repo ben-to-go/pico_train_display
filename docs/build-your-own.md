@@ -107,7 +107,7 @@ reads — and build:
 ```ini
 RTT_TOKEN=your-token
 OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic%20...
-KNOWN_WIFI=HomeNetwork:SecretPassword,OfficeNet:WorkPassword
+KNOWN_WIFI='[{"ssid": "HomeNetwork", "password": "SecretPassword"}, {"ssid": "OfficeNet", "password": "WorkPassword"}]'
 ```
 
 ```bash
@@ -144,16 +144,17 @@ You can configure multiple networks in two ways:
 
 Set `KNOWN_WIFI` in your `.env` file before running `make firmware`.
 
-* **Comma-separated `SSID:password` list (Recommended):**
+* **JSON Array format (Recommended):**
   ```ini
-  KNOWN_WIFI=HomeWiFi:HomeSecret123,OfficeNet:CorpPass99,PhoneHotspot:HotspotPass
+  KNOWN_WIFI='[{"ssid": "Home WiFi", "password": "HomeSecret123"}, {"ssid": "Office Net", "password": "CorpPass99"}]'
   ```
-  *(For open networks without a password, omit the password: `KNOWN_WIFI=HomeWiFi:Secret,OpenGuestWiFi`)*
+  *(Always wrap in single quotes `'...'` so shell variables with spaces are preserved when Make sources `.env`)*
 
-* **JSON Array format:**
+* **Comma-separated `SSID:password` format:**
   ```ini
-  KNOWN_WIFI='[{"ssid": "HomeWiFi", "password": "HomeSecret123"}, {"ssid": "OfficeNet", "password": "CorpPass99"}]'
+  KNOWN_WIFI="HomeWiFi:HomeSecret123,OfficeNet:CorpPass99"
   ```
+
 
 #### Option 2: Configuring via `config.json`
 
