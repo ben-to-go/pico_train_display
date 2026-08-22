@@ -41,9 +41,9 @@ This document explains what happens at every stage of the display's execution li
 
 ---
 
-## 🔄 The Running State (Dual-Core Execution & Runtime Recovery)
+## 🔄 The Running State (Dual-Core Architecture & Runtime Flow)
 
-Once initialized, the application operates as two concurrent loops running on separate CPU cores. **Non-fatal runtime errors are handled entirely within the running state without interrupting the display or rebooting the device**:
+Once initialized, the application operates as two concurrent loops running on separate CPU cores. **Non-fatal runtime errors are handled entirely within the running state on Core 0 without interrupting Core 1's display output**:
 
 ```
 +-------------------------------------------------------------------------------------------------------------------+
@@ -75,7 +75,7 @@ Once initialized, the application operates as two concurrent loops running on se
 |  +-----------------------------------------+                     |                                            |   |
 |                                                                  |       +------------------------------------+   |
 |                                                                  |       | Non-Fatal Runtime Error Handling       |
-|                                                                  |       |                                        |
+|                                                                  |       | (See docs/fallback.md for details)     |
 |                                                                  |       v                                        v
 |                                                                  |  [429 Rate Limit]                    [API 5xx/404/DNS]
 |                                                                  |  - Read Retry-After                  - Keep old departures
@@ -109,7 +109,7 @@ When power is applied to the Pico 2 W, `main.main()` executes on **Core 0**:
 | **Config Loader & Validation** | `src/config.py` | Reads `config.json`, validates types and value bounds. If missing or corrupt, branches to **Stage 2: Setup Portal**. |
 | **Baked-in Build Tokens** | `src/baked.py` | Allows pre-embedding `RTT_TOKEN` or `OTEL_HEADERS` into firmware so devices can be gifted without manual credential entry. |
 | **Flash Write-Ahead Log (WAL)** | `src/wal.py` | Mounts flash filesystem, auto-purges corrupted/orphaned `.tmp` files, and prepares `wal.log` for persistent logging. |
-| **Observability Initialization** | `src/otel.py` | Configures OpenTelemetry exporter, creates a unique boot Run ID, and records startup memory capacity. |
+| **Observability Initialization** | `src/otel.py` | Configures OpenTelemetry exporter, creates a unique boot Run ID, and records startup memory capacity. See [docs/observability.md](observability.md). |
 
 ---
 
@@ -133,7 +133,7 @@ Once valid configuration is loaded, `main.run()` establishes network connectivit
 | Feature | Where | What it does |
 | :--- | :--- | :--- |
 | **Wi-Fi Association** | `src/services/wifi.py` | Connects to the configured SSID with a 15-second timeout and animates connection progress dots on the OLED display. |
-| **Power Management Lockdown (`PM_NONE`)** | `src/services/wifi.py` | Forces `wlan.config(pm=0xa11140)` on every connection to stop the CYW43 Wi-Fi chip from entering DTIM sleep between router beacons (preventing ~90% of radio drops). |
+| **Power Management Lockdown (`PM_NONE`)** | `src/services/wifi.py` | Forces `wlan.config(pm=0xa11140)` on every connection to stop the CYW43 Wi-Fi chip from entering DTIM sleep between router beacons. |
 | **NTP Network Time Sync** | `src/services/ntp.py` | Synchronizes the RP2350 hardware RTC to UTC via standard Network Time Protocol servers. |
 | **UK Daylight Saving Time Rules** | `src/utils.py` | Computes British Summer Time (BST) offsets automatically so the clock matches real-world platform clocks year-round. |
 
@@ -146,14 +146,14 @@ Before launching the display render engine, the system fetches the first set of 
 | Feature | Where | What it does |
 | :--- | :--- | :--- |
 | **Synchronous First Fetch** | `src/trains.py` | Contacts Realtime Trains to retrieve initial departures and calling points. |
-| **Baked-In Snapshot Fallback** | `src/fallback.py` | If the network or API fails on initial boot, immediately loads a pre-captured real-world weekday morning timetable (Stoke Mandeville to London Marylebone) so the screen is never blank. |
+| **Baked-In Snapshot Fallback** | `src/fallback.py` | If the network or API fails on initial boot, immediately loads a pre-captured real-world weekday morning timetable (Stoke Mandeville to London Marylebone) so the screen is never blank. See [docs/fallback.md](fallback.md). |
 | **Boot Telemetry Delivery** | `src/otel.py` | Flushes startup and memory logs to Grafana Cloud Loki before entering the main loop. |
 
 ---
 
 ### Stage 5: The Running State (Dual-Core Engine & Non-Fatal Recovery)
 
-`main.run()` orchestrates the steady-state execution across both CPU cores:
+`main.run()` orchestrates steady-state execution across both CPU cores:
 
 #### Core 1: Dedicated 60 FPS Render Engine
 | Feature | Where | What it does |
@@ -163,7 +163,7 @@ Before launching the display render engine, the system fetches the first set of 
 | **Partial Row Flushing** | `src/ssd1322.py` | Compares previous and current framebuffers and transmits **only modified row spans** (e.g. 9 rows = 1,152 bytes vs 8,192 bytes full frame), reducing bus traffic by **86%** and eliminating visual tearing. |
 | **Zero-Allocation Rendering** | `src/widgets.py` | All framebuffers, command arrays, and row buffers are pre-allocated. Eliminates per-frame `gc.collect()` in the render thread for stutter-free 60 FPS output. |
 | **Smooth Text Scrolling** | `src/widgets.py` | Scrolls long calling-point lists using precise microsecond clock offsets rather than frame-step increments for buttery-smooth motion. |
-| **Authentic Rail Typography** | `src/fonts.py` | Draws departures using a faithful dot-matrix typeface with destination, scheduled time, expected time, platform badges, and ticking seconds indicator. |
+| **Authentic Rail Typography** | `src/fonts.py` | Draws departures using a faithful dot-matrix typeface with destination, scheduled time, expected time, platform badges, and ticking seconds indicator. See [docs/display-format.md](display-format.md). |
 
 #### Core 0: Scheduled Polling & Runtime Recovery
 | Feature | Where | What it does |
@@ -172,7 +172,7 @@ Before launching the display render engine, the system fetches the first set of 
 | **Dynamic Calling Points** | `src/services/rtt.py` | Detects when the next departing train changes and automatically fetches its full calling points. |
 | **401 Token Auto-Renewal** | `src/services/rtt.py` | Automatically exchanges expired OAuth/access tokens in <1 second without interrupting display output. |
 | **429 Rate Limit Backoff** | `src/main.py` | Automatically backs off for `error.retry_after` seconds without rebooting or spamming the server. |
-| **API Outage Resilience (5xx/404/DNS)** | `src/main.py` | If Realtime Trains is down or DNS fails while Wi-Fi is connected, the board **does not reboot**. The clock keeps ticking, the last valid departures stay visible, and the **1-pixel Stale Dot** illuminates. |
+| **API Outage Resilience (5xx/404/DNS)** | `src/main.py` | If Realtime Trains is down or DNS fails while Wi-Fi is connected, the board **does not reboot**. The clock keeps ticking, the last valid departures stay visible, and the **1-pixel Stale Dot** illuminates. Details in [docs/fallback.md](fallback.md). |
 | **Persistent WAL Replay** | `src/otel.py` | Replays any offline back-buffered logs from flash memory (`wal.log`) to Grafana Cloud Loki upon reconnection. |
 | **Heap Memory Monitoring** | `src/main.py` | Tracks free/allocated heap memory (typically ~22% utilized, ~356 KB free) and triggers proactive garbage collection on Core 0 during idle polling windows. |
 
