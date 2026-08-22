@@ -177,6 +177,9 @@ def get_calling_points(
   )
 
 
+from state import StateController
+
+
 class DepartureUpdater:
   """Class that updates departures for a given station periodically."""
 
@@ -187,6 +190,8 @@ class DepartureUpdater:
       endpoint: str,
       token: str,
       min_departure_time: int,
+      *,
+      state_controller: StateController | None = None,
   ):
     self._station = station
     self._destination = destination
@@ -194,16 +199,20 @@ class DepartureUpdater:
     self._token = token
     self._access_token = None
     self._min_departure_time = min_departure_time
+    self._state = (
+        state_controller
+        if state_controller is not None
+        else StateController(station)
+    )
 
-    self._lock = _thread.allocate_lock()
-    self._departures = Station(station, tuple())
-    self._stale = True
-    self._fetched = False
-    self._calling_points = ()
     self._calling_points_identity = None
     self._buffer = bytearray(_MAXRESPONSE_SIZE)
     self._memoryview = memoryview(self._buffer)
     self._ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+
+  @property
+  def state(self) -> StateController:
+    return self._state
 
   def _get_departures(self) -> Station:
     if self._access_token is None:
@@ -239,13 +248,9 @@ class DepartureUpdater:
         self._access_token = None
         departures = self._get_departures()
     except Exception:
-      with self._lock:
-        first_failure = not self._stale
-        never_fetched = not self._fetched
-        self._stale = True
-        if never_fetched:
-          self._departures = fallback_departures()
-          self._calling_points = fallback_calling_points(self._station)
+      never_fetched, first_failure = self._state.mark_stale(
+          fallback_departures(), fallback_calling_points(self._station)
+      )
       if never_fetched:
         logging.log(
             'Nothing has ever loaded for {}, so the board is the one baked '
@@ -256,19 +261,12 @@ class DepartureUpdater:
             'that loaded.', self._station)
       raise
 
-    with self._lock:
-      # Stale and fetched before, so this is a recovery rather than the first
-      # board of the day: an updater starts stale, having nothing to show yet.
-      recovered = self._stale and self._fetched
-      self._departures = departures
-      self._stale = False
-      self._fetched = True
+    points = self._fetch_calling_points(departures)
+    recovered = self._state.update_departures(departures, points)
     if recovered:
       logging.log('Departures for {} are current again.', self._station)
 
-    self._update_calling_points(departures)
-
-  def _update_calling_points(self, board: Station):
+  def _fetch_calling_points(self, board: Station) -> tuple[str, ...]:
     """Fetches calling points for the first departure, if they've changed.
 
     One extra request per board at most, and none at all while the same train
@@ -276,7 +274,7 @@ class DepartureUpdater:
     """
     identity = board.departures[0].identity if board.departures else None
     if identity == self._calling_points_identity:
-      return
+      return self._state.calling_points()
 
     points = ()
     if identity:
@@ -298,25 +296,20 @@ class DepartureUpdater:
         logging.exception(e)
         identity = None
 
-    with self._lock:
-      self._calling_points = points
-      self._calling_points_identity = identity
+    self._calling_points_identity = identity
+    return points
 
   def calling_points(self) -> tuple[str, ...]:
     """Stations the first departure calls at."""
-    with self._lock:
-      return self._calling_points
+    return self._state.calling_points()
 
   def stale(self) -> bool:
     """Whether the departures on show failed to refresh."""
-    with self._lock:
-      return self._stale
+    return self._state.stale()
 
   def departures(self) -> tuple[Departure, ...]:
     """Returns tuple of departures."""
-    with self._lock:
-      return self._departures.departures
+    return self._state.departures()
 
   def station(self) -> str:
-    with self._lock:
-      return self._departures.name
+    return self._state.station()

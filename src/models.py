@@ -85,7 +85,8 @@ class Departure:
 Station = collections.namedtuple('Station', ('name', 'departures'))
 
 BoardSnapshot = collections.namedtuple(
-    'BoardSnapshot', ('station', 'departures', 'calling_points', 'stale')
+    'BoardSnapshot',
+    ('station', 'departures', 'calling_points', 'stale', 'fetched', 'last_updated_ms'),
 )
 
 
