@@ -321,8 +321,66 @@ class RequestsAtStartupTest(unittest.TestCase):
 
     self._run()
 
-
     self.assertEqual(1, self.slept, 'the backoff, not the whole interval')
+
+  def test_reconnects_wifi_on_consecutive_failures(self):
+    # A single failure rides out a blip; a second failure in a row cycles
+    # the Wi-Fi connection without waiting for a full 30-minute reboot.
+    reconnected = []
+    main._connect = lambda *a, **k: reconnected.append(True) or types.SimpleNamespace(
+        isconnected=lambda: True
+    )
+
+    failed = [0]
+
+    class _FailsTwice:
+
+      def __init__(self, *args, **kwargs):
+        pass
+
+      def update(self):
+        failed[0] += 1
+        if failed[0] <= 2:
+          raise ValueError('bad response')
+        raise _Stop()
+
+    main.trains = types.SimpleNamespace(
+        DepartureUpdater=_FailsTwice, retry_wait=lambda e, n, interval: 1
+    )
+
+    self._run()
+    # 1 initial connect at boot + 1 soft-cycle on 2nd failure
+    self.assertEqual(2, len(reconnected))
+
+  def test_reconnects_wifi_on_socket_timeout(self):
+    # An explicit socket timeout (e.g. ETIMEDOUT) cycles the Wi-Fi immediately
+    # rather than waiting for 30 minutes.
+    reconnected = []
+    main._connect = lambda *a, **k: reconnected.append(True) or types.SimpleNamespace(
+        isconnected=lambda: True
+    )
+
+    failed = [0]
+
+    class _TimesOut:
+
+      def __init__(self, *args, **kwargs):
+        pass
+
+      def update(self):
+        failed[0] += 1
+        if failed[0] == 2:
+          raise OSError(110, 'connection timed out')
+        if failed[0] > 2:
+          raise _Stop()
+
+    main.trains = types.SimpleNamespace(
+        DepartureUpdater=_TimesOut, retry_wait=lambda e, n, interval: 1
+    )
+
+    self._run()
+    # 1 initial connect at boot + 1 soft-cycle on socket timeout
+    self.assertEqual(2, len(reconnected))
 
 
 class WifiPowerSavingTest(unittest.TestCase):
