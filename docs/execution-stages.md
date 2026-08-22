@@ -4,50 +4,48 @@ This document explains what happens at every stage of the display's execution li
 
 ---
 
-## 🗺️ High-Level Lifecycle Flowchart
+## 🗺️ Complete Execution Lifecycle & Architecture Flowchart
+
+The following unified flowchart maps the entire runtime lifecycle of the application:
 
 ```
- [Cold Boot / Power On]
-           |
-           v
- [Stage 1: Boot & Config] -----> (No config or invalid?) -----> [Stage 2: Setup Portal AP]
-           |                                                              |
-           | (Config Valid)                                               v
-           v                                                     (Save & Reset into Config)
- [Stage 3: Wi-Fi & NTP Clock]
-           |
-           v
- [Stage 4: Initial Departure Fetch] (Fails? -> Load Baked-in Fallback Snapshot)
-           |
-           v
- +---------------------------------------------------------------------------------------+
- |                         STAGE 5: RUNNING STATE (DUAL-CORE ENGINE)                     |
- |                                                                                       |
- |   CORE 1: Dedicated 60 FPS Render Loop        CORE 0: Scheduled Polling & Recovery    |
- |   - Partial row SSD1322 OLED flush            - 120s request pacing                   |
- |   - Dot-matrix UK rail typography             - Dynamic calling points query          |
- |   - Smooth sub-pixel text scrolling           - Auto 401 token renewal (<1s)          |
- |   - Zero-allocation render (No GC pauses)     - Non-fatal error handling & stale dot  |
- |                                               - Flash WAL replay to Grafana Loki      |
- +---------------------------------------------------------------------------------------+
-           |
-           | (Fatal Hardware Radio Lockup / Socket Loss: STAT_CONNECTING, EHOSTUNREACH)
-           v
- [Stage 6: Graceful Shutdown & Crash Watchdog]
-           |
-           v
-    [Hardware Reset (reboots in 1.2s)]
-```
-
----
-
-## 🔄 The Running State (Dual-Core Architecture & Runtime Flow)
-
-Once initialized, the application operates as two concurrent loops running on separate CPU cores. **Non-fatal runtime errors are handled entirely within the running state on Core 0 without interrupting Core 1's display output**:
-
-```
+                                         [POWER ON / COLD BOOT]
+                                                    |
+                                                    v
+                                    +-------------------------------+
+                                    | STAGE 1: BOOT & CONFIG LOADER |
+                                    | - Read & validate config.json |
+                                    | - Purge corrupted .tmp files  |
+                                    | - Init Flash WAL (wal.log)    |
+                                    | - Create boot Run ID (otel)   |
+                                    +---------------+---------------+
+                                                    |
+                                       Config Valid?|
+                               +--------------------+--------------------+
+                               |                                         |
+                            (No / Corrupt)                            (Yes)
+                               |                                         |
+                               v                                         v
+            +--------------------------------------+   +-----------------------------------+
+            | STAGE 2: CAPTIVE SETUP PORTAL (AP)   |   | STAGE 3: WI-FI & TIME SYNC        |
+            | - Show AP SSID & URL on OLED         |   | - Join Wi-Fi (15s timeout)        |
+            | - Scan & rank SSIDs by RSSI          |   | - Lock power mode (PM_NONE)       |
+            | - Serve web portal (192.168.4.1)     |   | - NTP sync to UTC                 |
+            | - Write config.json & reboot         |   | - Calculate UK BST clock offsets  |
+            +------------------+-------------------+   +-----------------+-----------------+
+                               |                                         |
+                               +--------------------+                    v
+                                                    |  +-----------------------------------+
+                                                    |  | STAGE 4: INITIAL DEPARTURE FETCH  |
+                                                    |  | - Fetch first live departures     |
+                                                    |  | - If offline: Load Baked-in       |
+                                                    |  |   Stoke Mandeville snapshot       |
+                                                    |  | - Ship startup boot telemetry     |
+                                                    |  +-----------------+-----------------+
+                                                    |                    |
+                                                    v                    v
 +-------------------------------------------------------------------------------------------------------------------+
-|                                       RUNNING STATE (DUAL-CORE ARCHITECTURE)                                      |
+|                                 STAGE 5: RUNNING STATE (DUAL-CORE ARCHITECTURE)                                   |
 |                                                                                                                   |
 |  CORE 1: HIGH-PRIORITY RENDER ENGINE (60 FPS)             CORE 0: ORCHESTRATION, POLLING & RECOVERY (120s)        |
 |  --------------------------------------------             ------------------------------------------------        |
@@ -89,11 +87,15 @@ Once initialized, the application operates as two concurrent loops running on se
 |                                                                  |                 [Loop to next cycle]
 |                                                                  |
 +------------------------------------------------------------------|------------------------------------------------+
+                                                                   |
+                                                                   | (Fatal Radio Loss / Socket Lockup)
                                                                    v
-                                               [Stage 6: Graceful Shutdown & Reset]
-                                               - Flush crash log to flash WAL
-                                               - Arm hardware watchdog
-                                               - machine.reset() (reboots in 1.2s)
+                                               +---------------------------------------+
+                                               | STAGE 6: GRACEFUL SHUTDOWN & RESET    |
+                                               | - Flush crash log to flash WAL        |
+                                               | - Arm hardware watchdog (machine.WDT) |
+                                               | - machine.reset() (reboots in 1.2s)   |
+                                               +---------------------------------------+
 ```
 
 ---
@@ -133,7 +135,7 @@ Once valid configuration is loaded, `main.run()` establishes network connectivit
 | Feature | Where | What it does |
 | :--- | :--- | :--- |
 | **Wi-Fi Association** | `src/services/wifi.py` | Connects to the configured SSID with a 15-second timeout and animates connection progress dots on the OLED display. |
-| **Power Management Lockdown (`PM_NONE`)** | `src/services/wifi.py` | Forces `wlan.config(pm=0xa11140)` on every connection to stop the CYW43 Wi-Fi chip from entering DTIM sleep between router beacons. |
+| **Power Management Lockdown (`PM_NONE`)** | `src/services/wifi.py` | Forces `wlan.config(pm=0xa11140)` on every connection to stop the CYW43 Wi-Fi chip from entering DTIM sleep between router beacons (preventing ~90% of radio drops). |
 | **NTP Network Time Sync** | `src/services/ntp.py` | Synchronizes the RP2350 hardware RTC to UTC via standard Network Time Protocol servers. |
 | **UK Daylight Saving Time Rules** | `src/utils.py` | Computes British Summer Time (BST) offsets automatically so the clock matches real-world platform clocks year-round. |
 
