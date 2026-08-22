@@ -104,13 +104,13 @@ instead of being typed into the setup page.
 Put them in a `.env` next to the Makefile — the same file the simulator
 reads — and build:
 
-```
+```ini
 RTT_TOKEN=your-token
 OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic%20...
 KNOWN_WIFI=HomeNetwork:SecretPassword,OfficeNet:WorkPassword
 ```
 
-```
+```bash
 make firmware
 ```
 
@@ -121,10 +121,8 @@ could not read is obvious rather than silent:
   Baked in: RTT_TOKEN (32 chars), OTEL_HEADERS (96 chars), KNOWN_WIFI (58 chars)
 ```
 
-Flash that image and the display scans for available Wi-Fi networks on startup,
-connecting automatically to the best available known network. It only falls
-back to the setup access point if none of the known networks are visible or
-their credentials fail.
+Flash that image and the display scans for nearby Wi-Fi networks on startup,
+automatically connecting to the best available known network.
 
 Everything else — the tokens, the station codes, the display options — is
 folded into **Advanced settings**, collapsed, with the defaults the page has
@@ -132,15 +130,68 @@ always had. Anything left blank there falls back to what was baked in, and
 anything typed in wins, which is how a revoked token gets replaced without a
 rebuild.
 
-
 A build with no `.env` bakes nothing and opens that section by itself, since
 then there is an API token in it that has to be filled in. So the released
 firmware is set up exactly as it always was.
 
+### Multiple Wi-Fi Networks Configuration
+
+The display supports storing multiple known Wi-Fi networks (e.g. home, office, phone hotspot). On startup, it performs an active scan of available 2.4 GHz SSIDs and connects to the known network with the strongest signal (RSSI). If none of the known networks are visible or connection fails, it falls back to the captive setup portal (`Pico Train Display` AP at `http://192.168.4.1`).
+
+You can configure multiple networks in two ways:
+
+#### Option 1: Baking into firmware via `.env` (Zero-Provisioning Build)
+
+Set `KNOWN_WIFI` in your `.env` file before running `make firmware`.
+
+* **Comma-separated `SSID:password` list (Recommended):**
+  ```ini
+  KNOWN_WIFI=HomeWiFi:HomeSecret123,OfficeNet:CorpPass99,PhoneHotspot:HotspotPass
+  ```
+  *(For open networks without a password, omit the password: `KNOWN_WIFI=HomeWiFi:Secret,OpenGuestWiFi`)*
+
+* **JSON Array format:**
+  ```ini
+  KNOWN_WIFI='[{"ssid": "HomeWiFi", "password": "HomeSecret123"}, {"ssid": "OfficeNet", "password": "CorpPass99"}]'
+  ```
+
+#### Option 2: Configuring via `config.json`
+
+If you are modifying `config.json` directly on flash or provisioning via file:
+
+* **Multiple networks:**
+  ```json
+  {
+    "station": "SKM",
+    "destination": "MYB",
+    "wifi": {
+      "networks": [
+        {"ssid": "HomeWiFi", "password": "HomeSecret123"},
+        {"ssid": "OfficeNet", "password": "CorpPass99"},
+        {"ssid": "PhoneHotspot", "password": "HotspotPass"}
+      ]
+    }
+  }
+  ```
+
+* **Single network (Default / Portal format):**
+  ```json
+  {
+    "station": "SKM",
+    "destination": "MYB",
+    "wifi": {
+      "ssid": "HomeWiFi",
+      "password": "HomeSecret123"
+    }
+  }
+  ```
+
+**Priority Order:** Networks specified explicitly in `config.json` take highest precedence, followed by fallback networks configured in `KNOWN_WIFI`.
+
 **A baked image is not a secret.** Frozen strings sit in the `.uf2` as plain
 text:
 
-```
+```bash
 strings firmware.uf2 | grep -i token
 ```
 
@@ -159,9 +210,10 @@ fine for a present, and means two things worth doing:
 They are kept in a `config.json` in flash, above where the firmware lives, so
 they survive a firmware update. There is no settings page on a running board.
 
-**Changing wifi** takes care of itself. If the board cannot join the network in
-its config when it starts up, it shows the setup screen again, so moving house
-means plugging it in and filling the form in once more.
+**Changing wifi** takes care of itself. If the board cannot find or join any known network
+when it starts up, it automatically shows the setup screen (`http://192.168.4.1`), so moving house
+means plugging it in and entering the new network details once.
+
 
 **Changing the station** means removing the config, because a board that is
 working has no reason to ask. Hold **BOOTSEL**, plug in, and copy two files
