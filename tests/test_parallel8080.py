@@ -71,23 +71,28 @@ class Parallel8080AtomicBusTest(unittest.TestCase):
     """CPython equivalent of the viper _blast function for testing register writes."""
     for i in range(count):
       b = buf[i]
-      # 1. Clear GP0-GP8
-      self.sio[0xD0000018] = 0x1FF
-      self.clr_history.append(0x1FF)
-      self.pin_history.append(('CLR_DATA_STROBE', self.sio.gpio_out))
+      # 1. Clear data bus GP0-GP7 while strobe (GP8) stays HIGH
+      self.sio[0xD0000018] = 0xFF
+      self.clr_history.append(0xFF)
+      self.pin_history.append(('CLR_DATA', self.sio.gpio_out))
 
-      # 2. Set data byte bits
+      # 2. Set data byte bits onto GP0-GP7 (strobe remains HIGH)
       if b != 0:
         self.sio[0xD0000014] = b
         self.set_history.append(b)
         self.pin_history.append(('SET_DATA', self.sio.gpio_out))
 
-      # 3. Hold strobe
+      # 3. Pull strobe LOW (GP8)
+      self.sio[0xD0000018] = 0x100
+      self.clr_history.append(0x100)
+      self.pin_history.append(('STROBE_LOW', self.sio.gpio_out))
+
+      # 4. Hold strobe LOW
       for _ in range(pad):
         self.sio[0xD0000018] = 0x100
         self.clr_history.append(0x100)
 
-      # 4. Strobe HIGH
+      # 5. Strobe HIGH (GP8) - latch edge
       self.sio[0xD0000014] = 0x100
       self.set_history.append(0x100)
       self.pin_history.append(('STROBE_HIGH', self.sio.gpio_out))
@@ -97,7 +102,7 @@ class Parallel8080AtomicBusTest(unittest.TestCase):
     wifi_mask = (1 << 23) | (1 << 24) | (1 << 25) | (1 << 29)
     # Set high bits 9-31 to an active Wi-Fi transaction pattern
     initial_high_pins = wifi_mask | (0xAAAAAAAA & ~0x1FF)
-    self.sio.gpio_out = initial_high_pins
+    self.sio.gpio_out = initial_high_pins | 0x100  # WR initially HIGH
 
     test_data = bytes([0x00, 0xFF, 0x55, 0xAA, 0x12, 0x34, 0x7E, 0x81])
     self._simulate_blast(test_data, len(test_data), pad=1)
@@ -112,25 +117,29 @@ class Parallel8080AtomicBusTest(unittest.TestCase):
       )
 
   def test_data_bus_and_strobe_sequence(self):
-    self.sio.gpio_out = 0
+    self.sio.gpio_out = 0x100  # WR initially HIGH
     test_data = bytes([0x42, 0xA5])
     self._simulate_blast(test_data, len(test_data), pad=1)
 
     # First byte: 0x42 (66)
-    # Step 1: clear GP0-GP8 -> bus = 0, strobe = 0
-    self.assertEqual(0, self.pin_history[0][1] & 0x1FF)
-    # Step 2: set data -> bus = 0x42, strobe = 0
-    self.assertEqual(0x42, self.pin_history[1][1] & 0x1FF)
-    # Step 3: strobe HIGH -> bus = 0x42, strobe = 0x100 (total = 0x142)
-    self.assertEqual(0x142, self.pin_history[2][1] & 0x1FF)
+    # Step 1: clear GP0-GP7 -> data = 0, strobe = 0x100 (total = 0x100)
+    self.assertEqual(0x100, self.pin_history[0][1] & 0x1FF)
+    # Step 2: set data -> data = 0x42, strobe = 0x100 (total = 0x142)
+    self.assertEqual(0x142, self.pin_history[1][1] & 0x1FF)
+    # Step 3: strobe LOW -> data = 0x42, strobe = 0 (total = 0x42)
+    self.assertEqual(0x42, self.pin_history[2][1] & 0x1FF)
+    # Step 4: strobe HIGH -> data = 0x42, strobe = 0x100 (total = 0x142)
+    self.assertEqual(0x142, self.pin_history[3][1] & 0x1FF)
 
     # Second byte: 0xA5 (165)
-    # Step 4: clear GP0-GP8 -> bus = 0, strobe = 0
-    self.assertEqual(0, self.pin_history[3][1] & 0x1FF)
-    # Step 5: set data -> bus = 0xA5, strobe = 0
-    self.assertEqual(0xA5, self.pin_history[4][1] & 0x1FF)
-    # Step 6: strobe HIGH -> bus = 0xA5, strobe = 0x100 (total = 0x1A5)
+    # Step 5: clear GP0-GP7 -> data = 0, strobe = 0x100 (total = 0x100)
+    self.assertEqual(0x100, self.pin_history[4][1] & 0x1FF)
+    # Step 6: set data -> data = 0xA5, strobe = 0x100 (total = 0x1A5)
     self.assertEqual(0x1A5, self.pin_history[5][1] & 0x1FF)
+    # Step 7: strobe LOW -> data = 0xA5, strobe = 0 (total = 0xA5)
+    self.assertEqual(0xA5, self.pin_history[6][1] & 0x1FF)
+    # Step 8: strobe HIGH -> data = 0xA5, strobe = 0x100 (total = 0x1A5)
+    self.assertEqual(0x1A5, self.pin_history[7][1] & 0x1FF)
 
   def test_parallel_bus_pins_and_write(self):
     bus = parallel8080.ParallelBus()

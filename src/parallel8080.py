@@ -83,17 +83,19 @@ def _blast(buf: ptr8, count: int, pad: int):
   i = 0
   while i < count:
     b = int(buf[i])
-    # 1. Clear data bus (GP0-GP7) and assert write strobe LOW (GP8):
-    clr_reg[0] = 0x1FF
-    # 2. Put data byte bits onto GP0-GP7 (strobe remains LOW):
+    # 1. Clear data bus GP0-GP7 while strobe (GP8) remains HIGH:
+    clr_reg[0] = 0xFF
+    # 2. Put data byte bits onto GP0-GP7 (strobe is still HIGH, settling data):
     if b != 0:
       set_reg[0] = b
-    # 3. Hold strobe LOW for minimum pulse width (>= 60ns):
+    # 3. Pull write strobe GP8 LOW:
+    clr_reg[0] = 0x100
+    # 4. Hold strobe LOW for minimum pulse width (>= 60ns):
     j = 0
     while j < pad:
       clr_reg[0] = 0x100  # Strobe hold / delay
       j += 1
-    # 4. Deassert write strobe HIGH (rising edge latches data into SSD1322):
+    # 5. Pull write strobe GP8 HIGH (rising edge latches data into SSD1322):
     set_reg[0] = 0x100
     i += 1
 
