@@ -22,7 +22,7 @@ RP2_BUILD = $(MICROPYTHON_DIR)/ports/rp2/build-$(BOARD)
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo unknown)
 FIRMWARE = build/pico_train_display_$(BOARD)_$(VERSION).uf2
 
-.PHONY: sim test firmware baked firmware-depend sim-depend unix-port
+.PHONY: sim test firmware baked firmware-depend sim-depend unix-port flash f flash-n fn
 
 # Runs main.py against config.json, with the panel drawn in the terminal.
 sim:
@@ -47,6 +47,23 @@ firmware: baked | $(MICROPYTHON_DIR)
 	@mkdir -p $(dir $(FIRMWARE))
 	@cp $(RP2_BUILD)/firmware.uf2 $(FIRMWARE)
 	@echo 'Flash this: $(FIRMWARE)'
+
+PICO ?= /Volumes/RPI-RP2
+FLASH_NUKE = build/flash_nuke.uf2
+
+# Copies the firmware to a connected Pico in BOOTSEL mode.
+flash f: firmware
+	cp $(FIRMWARE) $(PICO)/
+
+# Erases flash with flash_nuke.uf2, waits for reboot, then flashes the firmware.
+flash-n fn: | $(FLASH_NUKE)
+	cp $(FLASH_NUKE) $(PICO)/
+	sleep 2
+	$(MAKE) f
+
+$(FLASH_NUKE):
+	mkdir -p $(dir $@)
+	curl -sSfL https://datasheets.raspberrypi.com/soft/flash_nuke.uf2 -o $@
 
 # The tokens this image carries, out of the .env sim/run.sh already reads and
 # into a module the manifest freezes. Into build/ because it is generated, and
