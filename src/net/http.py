@@ -53,9 +53,30 @@ def _parse_url(url: str) -> tuple[str, str, int, str]:
   return proto, host, port, path
 
 
+import gc
+
+_DNS_CACHE: dict[tuple[str, int], tuple] = {}
+
+
+def _resolve_address(host: str, port: int) -> tuple:
+  """Resolves hostname to address with caching to prevent UDP DNS drops on 2.4GHz Wi-Fi."""
+  key = (host, port)
+  if key in _DNS_CACHE:
+    return _DNS_CACHE[key]
+  try:
+    addr = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)[0]
+    _DNS_CACHE[key] = addr
+    return addr
+  except Exception:
+    if key in _DNS_CACHE:
+      return _DNS_CACHE[key]
+    raise
+
+
 def _connect_socket(host: str, port: int, timeout: int | None) -> socket.socket:
   """Opens a TCP connection to the host and port with timeout."""
-  addr = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)[0]
+  gc.collect()
+  addr = _resolve_address(host, port)
   s = socket.socket(addr[0], socket.SOCK_STREAM, addr[2])
   try:
     try:
@@ -79,9 +100,11 @@ def _connect_socket(host: str, port: int, timeout: int | None) -> socket.socket:
 
 def _wrap_tls(s: socket.socket, host: str, ssl_context: ssl.SSLContext | None):
   """Wraps socket in TLS with SNI server hostname."""
+  gc.collect()
   if ssl_context is not None:
     return ssl_context.wrap_socket(s, server_hostname=host)
   return ssl.wrap_socket(s, server_hostname=host)
+
 
 
 def _send_request(
