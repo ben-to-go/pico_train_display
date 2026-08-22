@@ -72,18 +72,19 @@ _BOARDS = {
 # Read it off a built image with `picotool info -a firmware.uf2`, which prints
 # it as "embedded drive"; --filesystem-bytes overrides these.
 #
-# The firmware is useless without these, and a manifest mistake is quiet.
-# Looked for as "<name>.py\0", which is how the frozen names are stored, so a
-# module that merely gets mentioned somewhere does not count as present.
-# What gets frozen is manifest.py, via:
-# https://docs.micropython.org/en/latest/reference/manifest.html
-#
-# 'baked' holds nothing in most builds, but losing its manifest entry would be
-# silent until a display given to somebody asked them for an API token.
-_EXPECTED_FROZEN = (
-    'main', 'trains', 'widgets', 'fallback', 'ssd1322', 'parallel8080', 'otel',
-    'baked',
-)
+import os
+
+_SRC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src'))
+
+
+def _expected_frozen_modules():
+  """Returns all top-level modules in src/ that must be frozen in firmware."""
+  modules = ['baked']
+  if os.path.isdir(_SRC_DIR):
+    for name in sorted(os.listdir(_SRC_DIR)):
+      if name.endswith('.py'):
+        modules.append(name[:-3])
+  return tuple(modules)
 
 # MicroPython allocates its heap from whatever SRAM the linker did not claim:
 # https://docs.micropython.org/en/latest/reference/constrained.html
@@ -214,12 +215,13 @@ def check(uf2_path, board_name, filesystem_bytes, elf_path):
       )
 
   # Is the application actually in there?
+  expected = _expected_frozen_modules()
   missing = [
-      m for m in _EXPECTED_FROZEN if (m + '.py\0').encode() not in contents
+      m for m in expected if (m + '.py\0').encode() not in contents
   ]
   print(
       '  frozen      {} of {} expected modules found'.format(
-          len(_EXPECTED_FROZEN) - len(missing), len(_EXPECTED_FROZEN)
+          len(expected) - len(missing), len(expected)
       )
   )
   if missing:
