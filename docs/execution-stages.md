@@ -10,18 +10,19 @@ The following interactive diagram maps all lifecycle stages, decision points, cr
 
 ```mermaid
 flowchart TD
-    Boot([Power On / Cold Boot]) --> S1["<b>Stage 1: Boot & Config Loader</b><br/>• Read & validate config.json<br/>• Purge corrupted .tmp files<br/>• Init Flash WAL (wal.log)<br/>• Create boot Run ID (otel)"]
+    Boot([Power On / Cold Boot]) --> S1["<b>Stage 1: Boot & Config Loader</b><br/>• Read & validate config.json<br/>• Auto-create config from baked creds if missing<br/>• Purge corrupted .tmp files<br/>• Init Flash WAL (wal.log)<br/>• Create boot Run ID (otel)"]
 
-    S1 --> DecisionConfig{Config Valid?}
+    S1 --> DecisionConfig{Config Valid / Baked?}
     
-    DecisionConfig -->|No / Corrupted| S2["<b>Stage 2: Setup Portal (AP)</b><br/>• Broadcast SSID 'Pico Train Display'<br/>• Serve captive portal (192.168.4.1)<br/>• Save config.json & machine.reset()"]
+    DecisionConfig -->|No / Missing & Unbaked| S2["<b>Stage 2: Setup Portal (AP)</b><br/>• Broadcast SSID 'Pico Train Display'<br/>• Serve captive portal (192.168.4.1)<br/>• Save config.json & machine.reset()"]
     S2 -->|Save & Reset| Boot
 
-    DecisionConfig -->|Yes| S3["<b>Stage 3: Wi-Fi & NTP Sync</b><br/>• Join Wi-Fi (15s timeout)<br/>• Lock power mode (PM_NONE)<br/>• NTP sync & UK BST clock offsets"]
+    DecisionConfig -->|Yes / Baked Available| S3["<b>Stage 3: Wi-Fi & NTP Sync</b><br/>• Scan & join best known Wi-Fi (15s timeout)<br/>• Lock power mode (PM_NONE)<br/>• NTP sync & UK BST clock offsets"]
 
     S3 --> DecisionWifi{Wi-Fi Joined?}
     DecisionWifi -->|No: Timeout 15s| S2
     DecisionWifi -->|Yes| S4["<b>Stage 4: Initial Board Fetch</b><br/>• Query Realtime Trains API<br/>• If offline: Load baked-in snapshot<br/>• Ship boot telemetry to Loki"]
+
 
     S4 --> Stage5
 
@@ -71,10 +72,11 @@ When power is applied to the Pico 2 W, `main.main()` executes on **Core 0**:
 
 | Feature | Where | What it does | Conditional Paths |
 | :--- | :--- | :--- | :--- |
-| **Config Loader & Validation** | `src/config.py` | Reads `config.json`, validates types and value bounds. | • **Invalid / Missing**: Diverts to **Stage 2 (Setup Portal)**.<br>• **Valid**: Proceeds to **Stage 3 (Wi-Fi & Time Sync)**. |
-| **Baked-in Build Tokens** | `src/baked.py` | Allows pre-embedding `RTT_TOKEN` or `OTEL_HEADERS` into firmware so devices can be gifted without manual credential entry. | Loaded if `config.json` does not specify tokens. |
+| **Config Loader & Validation** | `src/config.py` | Reads `config.json`, validates types and value bounds. If missing but baked credentials exist, auto-generates `config.json`. | • **Invalid / Missing (no baked creds)**: Diverts to **Stage 2 (Setup Portal)**.<br>• **Valid / Auto-Created from Baked**: Proceeds to **Stage 3 (Wi-Fi & Time Sync)**. |
+| **Baked-in Build Tokens** | `src/baked.py` | Allows pre-embedding `RTT_TOKEN`, `KNOWN_WIFI`, or `OTEL_HEADERS` into firmware so devices can be gifted without manual credential entry. | Loaded if `config.json` does not specify tokens or on initial fresh boot. |
 | **Flash Write-Ahead Log (WAL)** | `src/wal.py` | Mounts flash filesystem, auto-purges corrupted/orphaned `.tmp` files, and prepares `wal.log` for persistent logging. | Always initialized at startup. |
 | **Observability Initialization** | `src/otel.py` | Configures OpenTelemetry exporter, creates a unique boot Run ID, and records startup memory capacity. See [docs/observability.md](observability.md). | Always executed at boot. |
+
 
 ---
 

@@ -384,7 +384,29 @@ def main():
     try:
       fallback_cfg = config_module.load({})
       if fallback_cfg.wifi.networks and fallback_cfg.rtt.token:
-        logging.log('Using baked credentials and defaults.')
+        logging.log('Creating initial config.json from baked credentials.')
+        with open('config.json', 'w') as f:
+          json.dump({
+              'station': fallback_cfg.station,
+              'destination': fallback_cfg.destination,
+              'wifi': {
+                  'networks': [
+                      {'ssid': s, 'password': p}
+                      for s, p in fallback_cfg.wifi.networks
+                  ]
+              },
+              'rtt': {
+                  'endpoint': fallback_cfg.rtt.endpoint,
+                  'token': fallback_cfg.rtt.token,
+                  'update_interval': fallback_cfg.rtt.update_interval,
+              },
+              'display': {
+                  'refresh': fallback_cfg.display.refresh,
+                  'flip': fallback_cfg.display.flip,
+                  'scroll_speed': fallback_cfg.display.scroll_speed,
+              },
+              'debug': {'log': fallback_cfg.debug.log},
+          }, f)
         config = fallback_cfg
     except Exception:
       pass
@@ -394,6 +416,7 @@ def main():
       logging.exception(e)
       _run_setup()
       return
+
 
 
   if config.debug.log:
