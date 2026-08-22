@@ -90,28 +90,41 @@ Counted through the real update path, by `tests/test_rate_limit.py`:
 The daily allowance is what sets the pace, and departures do not change fast
 enough for anything quicker to be worth it.
 
-## Backing off
+## Recovery and error handling
 
-There is no retry loop. A failure just brings the next go forward, by less or
-more depending on how many have failed in a row:
+The device differentiates between three distinct error scenarios:
 
-| failures in a row | wait |
-|---|---|
-| 1 | 1s |
-| 2 | 5s |
-| 3 | 30s |
-| 4 | 120s |
-| 5 | 600s |
-| 6 and after | 1800s |
+```
+                                  Departure Update Failed
+                                             |
+                   +-------------------------+-------------------------+
+                   |                                                   |
+           RateLimitError (429)                               Other Exception
+                   |                                                   |
+        Wait error.retry_after (e.g. 120s)              +--------------+--------------+
+            (NO REBOOT)                                 |                             |
+                                                Socket/Radio Error?            API Server Error?
+                                           (EHOSTUNREACH, ETIMEDOUT,         (500, 502, 503, 404,
+                                            isconnected() == False)           bad JSON format)
+                                                        |                             |
+                                              Attempt 1 Reconnect              Wi-Fi is healthy!
+                                                        |                       Mark board stale,
+                                              +---------+---------+            keep clock ticking,
+                                              |                   |            wait update_interval
+                                           Success             Failed                (120s)
+                                              |                   |                (NO REBOOT)
+                                           Retry in          REBOOT NOW
+                                             2s            (machine.reset())
+```
 
-So a blip costs one extra request and a second of staleness, while something
-properly broken is asked about less and less. A 429 is not on this ladder at
-all: the API sends the seconds to wait, and never less than the interval.
+### 1. Unrecoverable Wi-Fi / Radio Error -> Immediate Reboot
+When the CYW43 Wi-Fi driver wedges (`STAT_CONNECTING` / `EHOSTUNREACH`), software reconnection calls fail 100% of the time. The device attempts one fast reconnect; if that fails, it immediately triggers `machine.reset()`. The Pico 2 reboots and re-associates with Wi-Fi within **1.2 seconds**, bringing fresh departures back immediately rather than leaving the display stale for 30 minutes.
 
-The point is that **failing costs fewer requests than working does**, so a bad
-patch cannot spend the budget the recovery needs. Measured over an hour by
-`tests/test_rate_limit.py`: 32 requests while healthy, 7 while the API is
-down, 3 while rate limited.
+### 2. API 429 Rate Limit -> Backoff & Respect Server
+When Realtime Trains responds with HTTP 429 (`RateLimitError`), the device sleeps for `max(update_interval, error.retry_after)` seconds without rebooting, respecting the API budget.
+
+### 3. API Server Outage (500, 502, 503, 404, Bad Format) -> No Reboot Loop
+If Realtime Trains is down for maintenance or returning 5xx errors while local Wi-Fi is connected, the device **does not reboot**. The UI remains fully active (clock ticking smoothly, last known departures shown on the panel, stale dot illuminated), and the update loop retries quietly every `update_interval` (120s).
 
 ## The baked-in board
 

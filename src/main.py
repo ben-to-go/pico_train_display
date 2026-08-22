@@ -33,6 +33,7 @@ import config as config_module
 import display
 import fonts
 import logging
+from net.errors import RateLimitError
 import otel
 from services import ntp, wifi
 from setup import server
@@ -52,13 +53,6 @@ _SETUP_MESSAGE = (
 )
 
 _CONNECT_TIMEOUT = 30
-
-# How long a display goes without loading a board before it reboots. Nothing
-# short of a fetch working says the network is there: the radio can lose the
-# ability to transmit while the link still reads as up, and isconnected() goes
-# on saying yes throughout. Half an hour is long enough that a router being
-# rebooted or an API having a bad morning is ridden out rather than reset over.
-_REBOOT_AFTER = 30 * 60
 
 # Long enough for the last log batch to reach the collector, short enough that
 # a board which cannot transmit is not held up by trying. The rp2 watchdog
@@ -243,7 +237,7 @@ def run(config: config_module.Config):
       logging.log('Initial train update failed, using fallback departures.')
       logging.exception(e)
       failures = 1
-      wait = trains.retry_wait(e, failures, update_interval)
+      wait = trains.retry_wait(e, update_interval)
     gc.collect()
 
     logging.log('Start render loop')
@@ -267,34 +261,20 @@ def run(config: config_module.Config):
       for _ in range(wait):
         time.sleep(1)
 
-        # Checked inside the wait rather than once a go round, because the
-        # backoff reaches half an hour, which is the deadline itself: a board
-        # waiting one out would not look at this until an hour had gone.
-        #
-        # A reboot is the whole of the recovery. Taking the interface down
-        # first looks gentler but cannot work: active(False) sends a
-        # disassociate ioctl over the same bus that is carrying nothing, and
-        # connect() has the same problem with its join. Dropping power to the
-        # chip is what clears it, and a reset is how this board does that.
-        stale_for = time.ticks_diff(time.ticks_ms(), last_loaded) // 1000
-        if stale_for >= _REBOOT_AFTER:
+      # The whole chain, rebuilt from wherever it broke:
+      if wlan is None or not wlan.isconnected():
+        logging.log('Wi-Fi disconnected, attempting reconnect...')
+        wlan = _connect(config.wifi.ssid, config.wifi.password)
+        if wlan is None or not wlan.isconnected():
           logging.log(
-              'Nothing has loaded for {}s, so rebooting to get the radio '
-              'back.', stale_for)
+              'Wi-Fi radio is unresponsive, rebooting immediately to reset '
+              'hardware...'
+          )
           raise _RadioIsGone()
 
-      # The whole chain, rebuilt from wherever it broke: the aerial first,
-      # then the clock, then the API. Any link can be down at any point, and
-      # the board keeps showing what it has while they come back.
-      if wlan is None or not wlan.isconnected():
-        wlan = _connect(config.wifi.ssid, config.wifi.password)
       if wlan is not None and not clock_set:
         clock_set = _configure_time()
 
-      # One request a go, and a failure just brings the next go forward: a
-      # second or two for a blip, longer each time it keeps failing. There is
-      # no separate retry loop, because retrying is the same thing as going
-      # round again sooner. trains.retry_wait decides how much sooner.
       try:
         departure_updater.update()
         gc.collect()
@@ -303,28 +283,33 @@ def run(config: config_module.Config):
         wait = update_interval
         last_loaded = time.ticks_ms()
       except Exception as e:
-        # Anything at all: a dropped connection, a rate limit, a revoked
-        # token, an API that has been retired and now answers with something
-        # we can't parse. The board keeps showing what it has either way, so
-        # none of it is worth resetting the device over.
         failures += 1
         is_socket_error = isinstance(e, OSError) and (
-            e.errno in (errno.ECONNABORTED, errno.ETIMEDOUT, 110)
+            e.errno in (errno.ECONNABORTED, errno.ETIMEDOUT, 103, 110, 113, 118)
         )
-        if is_socket_error or failures >= 2:
-          # Network/socket failed or consecutive updates dropped. The CYW43
-          # driver can get wedged while isconnected() still reports True,
-          # so soft-cycling the interface brings it back without a full reboot.
-          logging.log('Network error ({}), cycling wifi connection...', e)
+        if isinstance(e, RateLimitError):
+          wait = max(update_interval, e.retry_after)
+          logging.log('Rate limited (429), backing off for {}s...', wait)
+        elif is_socket_error or (wlan is not None and not wlan.isconnected()):
+          logging.log('Network error ({}), attempting Wi-Fi reconnect...', e)
           wlan = _connect(config.wifi.ssid, config.wifi.password)
-        wait = trains.retry_wait(e, failures, update_interval)
-        logging.log(
-            'Train update failed, {} in a row, waiting {}s: {}',
-            failures,
-            wait,
-            e,
-        )
-        logging.exception(e)
+          if wlan is None or not wlan.isconnected():
+            logging.log('Wi-Fi radio is unresponsive, rebooting immediately...')
+            raise _RadioIsGone()
+          wait = 2
+        else:
+          # Remote API server error (500, 502, 503, 404, bad format).
+          # Wi-Fi is fine; the API server is having issues.
+          # Keep the display running (with clock + stale dot) and retry on
+          # normal interval without rebooting in a loop.
+          wait = update_interval
+          logging.log(
+              'API update failed ({}), will retry in {}s: {}',
+              type(e).__name__,
+              wait,
+              e,
+          )
+          logging.exception(e)
 
   finally:
     logging.log('Main thread closing...')
