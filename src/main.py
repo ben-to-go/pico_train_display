@@ -28,13 +28,13 @@ import _thread
 import machine
 import micropython
 import network
-import ntptime
 
 import config as config_module
 import display
 import fonts
 import logging
 import otel
+from services import ntp, wifi
 from setup import server
 import trains
 import utils
@@ -110,40 +110,8 @@ def _arm_shutdown_watchdog():
     logging.exception(e)
 
 
-def _no_power_saving(wlan: network.WLAN):
-  """Stops the radio parking itself between beacons.
-
-  The chip comes up in CYW43_PERFORMANCE_PM, which sleeps between beacons to
-  save power that a display screwed to a wall on a mains adaptor has no use
-  for. It is also the mode the CYW43 has been seen to wedge in after a few
-  hours: it stops granting transmit credits, the board can no longer send a
-  packet, and nothing here notices, because the link still reads as up. This
-  is not a fix for that, and it is not meant as one; it removes one reason for
-  it to happen at no cost to a display that is never on batteries.
-
-  Set after active(True) and before connecting, because bringing the chip up
-  from cold resets this to the default: anything that cycles the radio has to
-  ask again, and going through here is how it does.
-
-  The value is read back off the chip rather than reported from the constant,
-  so that the log says what the radio did rather than what it was told.
-  """
-  try:
-    wlan.config(pm=network.WLAN.PM_NONE)
-    logging.log('Wifi power saving: pm={}', wlan.config('pm'))
-  except Exception as e:
-    # A board that cannot turn power saving off is still a working board, so
-    # this is worth saying and not worth failing the connect over: raising
-    # from here would send a display that was about to work to the setup
-    # screen instead.
-    logging.log('Could not turn off wifi power saving.')
-    logging.exception(e)
-
-
-from services import ntp, wifi
-
-
 def _connect(ssid: str, password: str, screen: display.Display | None = None):
+  """Connects to station Wi-Fi with animated progress rendering on screen."""
   widget = (
       widgets.MessageWidget(screen, _WIFI_CONNECT, fonts.DEFAULT_FONT)
       if screen is not None
@@ -165,14 +133,17 @@ def _connect(ssid: str, password: str, screen: display.Display | None = None):
 
 
 def _scan_networks() -> list[str]:
+  """Scans for nearby Wi-Fi networks."""
   return wifi.scan_networks(network_module=network)
 
 
 def _no_power_saving(wlan):
+  """Disables Wi-Fi power saving mode."""
   return wifi._no_power_saving(wlan, network_module=network)
 
 
 def _configure_time() -> bool:
+  """Synchronizes RTC time via NTP."""
   return ntp.sync_time(timeout=_CONNECT_TIMEOUT)
 
 
@@ -183,6 +154,7 @@ def _render_thread(
     main_running: _thread.LockType,
     thread_running: _thread.LockType,
 ):
+  """Core 1 dedicated UI render loop."""
   with thread_running:
     main_display = widgets.MainWidget(
         screen,
@@ -210,6 +182,7 @@ def _render_thread(
 
 
 def run(config: config_module.Config):
+  """Happy-path orchestrator and main network update loop."""
   logging.log('Starting...')
 
   screen = display.create(config.display.flip)
@@ -252,7 +225,7 @@ def run(config: config_module.Config):
     # radio which has stopped transmitting cannot fake.
     last_loaded = time.ticks_ms()
 
-    # Get first set of departures synchonously. A failure here is not fatal:
+    # Get first set of departures synchronously. A failure here is not fatal:
     # the display falls back to the departures baked into the firmware, and
     # the update loop below keeps trying.
     #
@@ -360,6 +333,7 @@ def run(config: config_module.Config):
 
 
 async def setup(screen: display.Display):
+  """Provisions device via captive portal Access Point web server."""
   event = asyncio.Event()
   ssids = wifi.scan_networks(network_module=network)
   ap = await wifi.setup_access_point(
@@ -411,6 +385,7 @@ def _run_setup():
 
 
 def main():
+  """Loads config, configures logging and OpenTelemetry, and launches run()."""
   try:
     with open('config.json', 'r') as f:
       config = config_module.load(json.load(f))

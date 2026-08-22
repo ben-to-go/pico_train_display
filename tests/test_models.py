@@ -26,11 +26,15 @@ class ModelsTest(unittest.TestCase):
 
   def test_board_snapshot(self):
     d = Departure('London Marylebone', 1830, 1830, False)
-    snapshot = BoardSnapshot('Stoke Mandeville', (d,), ('Great Missenden',), False)
+    snapshot = BoardSnapshot(
+        'Stoke Mandeville', (d,), ('Great Missenden',), False, True, 1000
+    )
     self.assertEqual('Stoke Mandeville', snapshot.station)
     self.assertEqual((d,), snapshot.departures)
     self.assertEqual(('Great Missenden',), snapshot.calling_points)
     self.assertFalse(snapshot.stale)
+    self.assertTrue(snapshot.fetched)
+    self.assertEqual(1000, snapshot.last_updated_ms)
 
   def test_response_properties(self):
     resp = Response(200, {'content-type': 'application/json'}, b'{"ok": true}')
