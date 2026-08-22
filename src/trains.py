@@ -40,24 +40,16 @@ _REQUEST_TIMEOUT = 15
 _MAXRESPONSE_SIZE = 40 * 1024
 _TIME_WINDOW_MINS = 180
 
-_BACKOFF_SECS = (1, 5, 30, 120, 600, 1800)
+def retry_wait(error: Exception, interval: int) -> int:
+  """How long to leave it after a failed update.
 
-
-def retry_wait(error, failures_in_a_row: int, interval: int) -> int:
-  """How long to leave it after a failed update. Failures count from one.
-
-  A 429 answers the question itself: the API sends the seconds to wait, and
-  never less than the interval we would have waited anyway.
-
-  Anything else is treated as a blip until it proves otherwise. The first
-  retries come quickly, and if it keeps failing they stretch out, because the
-  request budget is small and it is the recovery that needs it.
+  A 429 answers the question itself: the API sends the seconds to wait.
+  For other API errors (5xx, 4xx, bad JSON), we wait the nominal interval (e.g. 120s)
+  so we retry quietly without rebooting or spamming the server.
   """
   if isinstance(error, RateLimitError):
     return max(interval, error.retry_after)
-
-  step = min(failures_in_a_row, len(_BACKOFF_SECS))
-  return _BACKOFF_SECS[step - 1]
+  return interval
 
 
 def _get_json(url: str, access_token: str, buffer=None, ssl_context=None):

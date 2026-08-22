@@ -79,35 +79,22 @@ class RetryWaitTest(unittest.TestCase):
 
   def test_the_api_decides_when_it_has_said_so(self):
     limited = trains.RateLimitError(1550)
-    self.assertEqual(1550, trains.retry_wait(limited, 1, 120))
-    # However many times in a row: the header is the answer, not a starting
-    # point to double from.
-    self.assertEqual(1550, trains.retry_wait(limited, 5, 120))
+    self.assertEqual(1550, trains.retry_wait(limited, 120))
 
   def test_a_short_retry_after_never_shortens_the_interval(self):
     # A retry-after under the polling interval would otherwise speed the
     # board up in response to being told to slow down.
-    self.assertEqual(120, trains.retry_wait(trains.RateLimitError(30), 1, 120))
+    self.assertEqual(120, trains.retry_wait(trains.RateLimitError(30), 120))
 
   def test_a_rate_limit_with_no_header_never_gets_the_blip_treatment(self):
-    # Being limited is reason enough to wait the usual interval, and asking
-    # again in a second is the one thing that must not happen.
-    self.assertEqual(120, trains.retry_wait(trains.RateLimitError(0), 1, 120))
+    # Being limited is reason enough to wait the usual interval.
+    self.assertEqual(120, trains.retry_wait(trains.RateLimitError(0), 120))
 
-  def test_a_blip_is_retried_almost_straight_away(self):
-    # The first failure is usually nothing: a dropped packet, a slow server.
-    # Waiting the full interval over one of those is two minutes of stale
-    # board for no reason.
-    self.assertEqual(1, trains.retry_wait(OSError('blip'), 1, 120))
-    self.assertEqual(5, trains.retry_wait(OSError('blip'), 2, 120))
-
-  def test_it_stretches_out_as_the_failures_stack_up(self):
-    waits = [trains.retry_wait(OSError('down'), n, 120) for n in range(1, 8)]
-    self.assertEqual([1, 5, 30, 120, 600, 1800, 1800], waits)
-
-  def test_the_wait_stops_growing(self):
-    # A board left overnight should still notice the API within half an hour.
-    self.assertEqual(1800, trains.retry_wait(OSError('down'), 500, 120))
+  def test_api_outages_wait_normal_interval_without_reboot_loop(self):
+    # When the API server is down or returns 5xx/4xx, wait the nominal interval
+    # quietly without spamming the server or triggering a reboot loop.
+    self.assertEqual(120, trains.retry_wait(OSError('server down'), 120))
+    self.assertEqual(120, trains.retry_wait(ValueError('503 Service Unavailable'), 120))
 
 
 
@@ -135,6 +122,8 @@ class RequestBudgetTest(unittest.TestCase):
 
   def setUp(self):
     self.addCleanup(setattr, trains, 'http_request', trains.http_request)
+    self.addCleanup(setattr, logging, '_write', logging._write)
+    logging._write = lambda msg: None
     self.requests = []
 
   def _serve(self, status=200, headers=None):
@@ -165,7 +154,7 @@ class RequestBudgetTest(unittest.TestCase):
         wait = interval
       except Exception as e:  # what run() does, minus the display
         failures += 1
-        wait = trains.retry_wait(e, failures, interval)
+        wait = trains.retry_wait(e, interval)
       elapsed += wait
     return len(self.requests)
 
@@ -207,17 +196,13 @@ class RequestBudgetTest(unittest.TestCase):
 
     self.assertLess(limited, working)
 
-  def test_an_outage_costs_less_than_working(self):
-    # Same again for the failures that carry no retry-after, where the
-    # doubling is all there is to go on.
+  def test_an_outage_does_not_exceed_hourly_allowance(self):
+    # API 500 error retries at the nominal interval and stays well inside
+    # the request budget.
     self._serve(500)
     down = self._run_for(60 * 60)
 
-    self.requests = []
-    self._serve()
-    working = self._run_for(60 * 60)
-
-    self.assertLess(down, working)
+    self.assertLess(down, _PER_HOUR)
 
 
 if __name__ == '__main__':

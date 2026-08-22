@@ -256,7 +256,7 @@ class RequestsAtStartupTest(unittest.TestCase):
     main.fonts = types.SimpleNamespace(
         DEFAULT_FONT=object(), CLOCK_FONT=object())
     main.trains = types.SimpleNamespace(
-        DepartureUpdater=_Updater, retry_wait=lambda e, n, interval: 1)
+        DepartureUpdater=_Updater, retry_wait=lambda e, interval: 1)
     main.otel = types.SimpleNamespace(send=send, install=lambda c: None)
     main.time = types.SimpleNamespace(
         sleep=sleep,
@@ -317,49 +317,15 @@ class RequestsAtStartupTest(unittest.TestCase):
         raise _Stop()
 
     main.trains = types.SimpleNamespace(
-        DepartureUpdater=_FailsFirst, retry_wait=lambda e, n, interval: 1)
+        DepartureUpdater=_FailsFirst, retry_wait=lambda e, interval: 1)
 
     self._run()
 
     self.assertEqual(1, self.slept, 'the backoff, not the whole interval')
 
-  def test_reconnects_wifi_on_consecutive_failures(self):
-    # A single failure rides out a blip; a second failure in a row cycles
-    # the Wi-Fi connection without waiting for a full 30-minute reboot.
-    reconnected = []
-    main._connect = lambda *a, **k: reconnected.append(True) or types.SimpleNamespace(
-        isconnected=lambda: True
-    )
-
-    failed = [0]
-
-    class _FailsTwice:
-
-      def __init__(self, *args, **kwargs):
-        pass
-
-      def update(self):
-        failed[0] += 1
-        if failed[0] <= 2:
-          raise ValueError('bad response')
-        raise _Stop()
-
-    main.trains = types.SimpleNamespace(
-        DepartureUpdater=_FailsTwice, retry_wait=lambda e, n, interval: 1
-    )
-
-    self._run()
-    # 1 initial connect at boot + 1 soft-cycle on 2nd failure
-    self.assertEqual(2, len(reconnected))
-
-  def test_reconnects_wifi_on_socket_timeout(self):
-    # An explicit socket timeout (e.g. ETIMEDOUT) cycles the Wi-Fi immediately
-    # rather than waiting for 30 minutes.
-    reconnected = []
-    main._connect = lambda *a, **k: reconnected.append(True) or types.SimpleNamespace(
-        isconnected=lambda: True
-    )
-
+  def test_reboots_immediately_on_socket_timeout(self):
+    # An explicit socket timeout (e.g. ETIMEDOUT / EHOSTUNREACH) raises _RadioIsGone
+    # immediately to power-cycle the wedged radio hardware.
     failed = [0]
 
     class _TimesOut:
@@ -371,16 +337,64 @@ class RequestsAtStartupTest(unittest.TestCase):
         failed[0] += 1
         if failed[0] == 2:
           raise OSError(110, 'connection timed out')
+
+    main.trains = types.SimpleNamespace(
+        DepartureUpdater=_TimesOut, retry_wait=lambda e, interval: 1
+    )
+
+    with self.assertRaises(main._RadioIsGone):
+      self._run()
+
+  def test_reboots_immediately_when_wifi_drops(self):
+    # When wlan.isconnected() becomes False, raises _RadioIsGone immediately.
+    is_connected = [True]
+    main._connect = lambda *a, **k: types.SimpleNamespace(
+        isconnected=lambda: is_connected[0]
+    )
+
+    class _Updater:
+
+      def __init__(self, *args, **kwargs):
+        pass
+
+      def update(self):
+        is_connected[0] = False
+
+    main.trains = types.SimpleNamespace(
+        DepartureUpdater=_Updater, retry_wait=lambda e, interval: 1
+    )
+
+    with self.assertRaises(main._RadioIsGone):
+      self._run()
+
+  def test_api_server_error_does_not_reconnect_or_reboot(self):
+    # An API 500 error does not cycle Wi-Fi or reboot the board.
+    reconnected = []
+    main._connect = lambda *a, **k: reconnected.append(True) or types.SimpleNamespace(
+        isconnected=lambda: True
+    )
+
+    failed = [0]
+
+    class _ServerDown:
+
+      def __init__(self, *args, **kwargs):
+        pass
+
+      def update(self):
+        failed[0] += 1
+        if failed[0] == 2:
+          raise ValueError('503 Service Unavailable')
         if failed[0] > 2:
           raise _Stop()
 
     main.trains = types.SimpleNamespace(
-        DepartureUpdater=_TimesOut, retry_wait=lambda e, n, interval: 1
+        DepartureUpdater=_ServerDown, retry_wait=lambda e, interval: 120
     )
 
     self._run()
-    # 1 initial connect at boot + 1 soft-cycle on socket timeout
-    self.assertEqual(2, len(reconnected))
+    # Only the initial connect at boot, no reconnects on API 500
+    self.assertEqual(1, len(reconnected))
 
 
 class WifiPowerSavingTest(unittest.TestCase):
@@ -447,14 +461,8 @@ class WifiPowerSavingTest(unittest.TestCase):
         'Could not turn off wifi power saving.', '\n'.join(self.lines))
 
 
-class RebootWhenNothingLoadsTest(unittest.TestCase):
-  """That a display which stops loading boards eventually reboots itself.
-
-  The failure this exists for looks healthy from every angle the firmware used
-  to check: associated, addressed, isconnected() true, and not one packet
-  getting out. Only a fetch that works says the network is there, so how long
-  since the last one is what decides when to stop believing the radio.
-  """
+class RebootOnRadioFailureTest(unittest.TestCase):
+  """That a display whose Wi-Fi radio becomes unresponsive reboots immediately."""
 
   def setUp(self):
     for name in ('gc', 'display', 'trains', 'widgets', 'fonts', 'otel',
@@ -468,7 +476,6 @@ class RebootWhenNothingLoadsTest(unittest.TestCase):
     test = self
     self.now_ms = 0
     self.loads_left = 0
-    self.last_load_ms = None
 
     class _Updater:
 
@@ -478,18 +485,11 @@ class RebootWhenNothingLoadsTest(unittest.TestCase):
       def update(self):
         if test.loads_left > 0:
           test.loads_left -= 1
-          test.last_load_ms = test.now_ms
           return
-        # No errno, so this is not the ECONNABORTED case that reconnects on
-        # its own: nothing here reconnects except what the test asks for.
-        raise OSError('nothing gets out')
+        raise OSError(113, 'host unreachable')
 
     def sleep(seconds):
       test.now_ms += seconds * 1000
-      # A backstop, so a deadline that never fires fails the test rather than
-      # looping until the runner gives up.
-      if test.now_ms // 1000 > main._REBOOT_AFTER * 4:
-        raise _Stop()
 
     real_lock = _thread_module.allocate_lock
     main.gc = types.SimpleNamespace(
@@ -503,10 +503,8 @@ class RebootWhenNothingLoadsTest(unittest.TestCase):
             render=lambda *a, **k: None))
     main.fonts = types.SimpleNamespace(
         DEFAULT_FONT=object(), CLOCK_FONT=object())
-    # The real ceiling, so the deadline is reached in a handful of times round
-    # rather than in eighteen hundred.
     main.trains = types.SimpleNamespace(
-        DepartureUpdater=_Updater, retry_wait=lambda e, n, interval: 600)
+        DepartureUpdater=_Updater, retry_wait=lambda e, interval: 120)
     main.otel = types.SimpleNamespace(send=lambda: None, install=lambda c: None)
     main.time = types.SimpleNamespace(
         sleep=sleep,
@@ -514,47 +512,45 @@ class RebootWhenNothingLoadsTest(unittest.TestCase):
         ticks_diff=lambda a, b: a - b)
     main._thread = types.SimpleNamespace(
         allocate_lock=real_lock, start_new_thread=lambda *a, **k: None)
-    # An associated radio all the way through, which is the whole point: this
-    # is what the old check believed and what the failure looks like.
-    main._connect = lambda *a, **k: types.SimpleNamespace(
-        isconnected=lambda: True)
     main._configure_time = lambda: True
 
   def _config(self):
     return main.config_module.load(_VALID_CONFIG)
 
-  def test_it_reboots_once_nothing_has_loaded_for_long_enough(self):
+  def test_it_reboots_immediately_when_radio_fails_to_reconnect(self):
+    connect_count = [0]
+
+    def mock_connect(*a, **k):
+      connect_count[0] += 1
+      if connect_count[0] == 1:
+        return types.SimpleNamespace(isconnected=lambda: True)
+      return None  # CYW43 is wedged
+
+    main._connect = mock_connect
+
     with self.assertRaises(main._RadioIsGone):
       main.run(self._config())
-
-  def test_it_does_not_reboot_before_the_deadline(self):
-    with self.assertRaises(main._RadioIsGone):
-      main.run(self._config())
-
-    self.assertGreaterEqual(self.now_ms // 1000, main._REBOOT_AFTER)
 
   def test_a_board_that_keeps_loading_is_left_alone(self):
-    # The deadline runs from the last board that loaded, so a display that is
-    # working runs past it without rebooting.
-    self.loads_left = 10000
+    main._connect = lambda *a, **k: types.SimpleNamespace(isconnected=lambda: True)
+    test = self
+    test.loads_left = 5
 
-    with self.assertRaises(_Stop):
+    class _StopAfter5(BaseException):
+      pass
+
+    class _Updater5:
+      def __init__(self, *args, **kwargs):
+        pass
+      def update(self):
+        if test.loads_left == 0:
+          raise _StopAfter5()
+        test.loads_left -= 1
+
+    main.trains.DepartureUpdater = _Updater5
+
+    with self.assertRaises(_StopAfter5):
       main.run(self._config())
-
-    self.assertGreater(self.now_ms // 1000, main._REBOOT_AFTER,
-                       'ran well past the deadline it never reached')
-
-  def test_the_deadline_runs_from_the_last_load_not_from_boot(self):
-    # A display that worked for a while and then stopped gets the full half
-    # hour from when it stopped, rather than counting time it was fine.
-    self.loads_left = 4
-
-    with self.assertRaises(main._RadioIsGone):
-      main.run(self._config())
-
-    self.assertIsNotNone(self.last_load_ms, 'it loaded before it stopped')
-    self.assertGreaterEqual(
-        (self.now_ms - self.last_load_ms) // 1000, main._REBOOT_AFTER)
 
 
 class ShutdownWatchdogTest(unittest.TestCase):
