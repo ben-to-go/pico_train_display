@@ -65,39 +65,33 @@ class Parallel8080AtomicBusTest(unittest.TestCase):
   def setUp(self):
     self.sio = MockMem32()
     self.pin_history = []
-    self.xor_history = []
+    self.set_history = []
     self.clr_history = []
 
   def _simulate_blast(self, buf, count, pad):
     """CPython equivalent of the viper _blast function for testing register writes."""
-    # Initialize GP0..GP7 to 0
-    self.sio[0xD0000018] = 0xFF
-    self.clr_history.append(0xFF)
-    self.pin_history.append(('INIT_DATA_BUS', self.sio.gpio_out))
-
-    b_prev = 0
     for i in range(count):
-      b_new = buf[i]
-      # 1. Update data lines GP0-GP7 via XOR (WR remains HIGH)
-      diff = b_prev ^ b_new
-      if diff != 0:
-        self.sio[0xD000001C] = diff
-        self.xor_history.append(diff)
-      b_prev = b_new
+      b = buf[i]
+      # 1. Update data lines GP0-GP7 while strobe (GP8) is HIGH
+      self.sio[0xD0000018] = (~b) & 0xFF
+      self.clr_history.append((~b) & 0xFF)
+      self.sio[0xD0000014] = b | 0x100
+      self.set_history.append(b | 0x100)
       self.pin_history.append(('SET_DATA', self.sio.gpio_out))
 
-      # 2. Toggle write strobe GP8 LOW (bit 8: 0x100)
-      self.sio[0xD000001C] = 0x100
-      self.xor_history.append(0x100)
+      # 2. Pull write strobe GP8 LOW (bit 8: 0x100)
+      self.sio[0xD0000018] = 0x100
+      self.clr_history.append(0x100)
       self.pin_history.append(('STROBE_LOW', self.sio.gpio_out))
 
-      # 3. Hold strobe LOW
+      # 3. Hold strobe LOW with stores
       for _ in range(pad):
-        pass
+        self.sio[0xD0000018] = 0x100
+        self.clr_history.append(0x100)
 
-      # 4. Toggle write strobe GP8 HIGH (rising edge latches data into SSD1322)
-      self.sio[0xD000001C] = 0x100
-      self.xor_history.append(0x100)
+      # 4. Pull write strobe GP8 HIGH (rising edge latches data into SSD1322)
+      self.sio[0xD0000014] = 0x100
+      self.set_history.append(0x100)
       self.pin_history.append(('STROBE_HIGH', self.sio.gpio_out))
 
   def test_blast_never_touches_wifi_gpios(self):
@@ -108,7 +102,7 @@ class Parallel8080AtomicBusTest(unittest.TestCase):
     self.sio.gpio_out = initial_high_pins | 0x100  # WR initially HIGH
 
     test_data = bytes([0x00, 0xFF, 0x55, 0xAA, 0x12, 0x34, 0x7E, 0x81])
-    self._simulate_blast(test_data, len(test_data), pad=1)
+    self._simulate_blast(test_data, len(test_data), pad=2)
 
     # Check every single intermediate state during the blast
     for step, state in self.pin_history:
@@ -122,26 +116,23 @@ class Parallel8080AtomicBusTest(unittest.TestCase):
   def test_data_bus_and_strobe_sequence(self):
     self.sio.gpio_out = 0x100  # WR initially HIGH
     test_data = bytes([0x42, 0xA5])
-    self._simulate_blast(test_data, len(test_data), pad=1)
-
-    # Init: GP0..GP7 = 0, WR = 1 (total = 0x100)
-    self.assertEqual(0x100, self.pin_history[0][1] & 0x1FF)
+    self._simulate_blast(test_data, len(test_data), pad=2)
 
     # First byte: 0x42 (66)
     # Step 1: data bus becomes 0x42, WR remains 1 (total = 0x142)
-    self.assertEqual(0x142, self.pin_history[1][1] & 0x1FF)
+    self.assertEqual(0x142, self.pin_history[0][1] & 0x1FF)
     # Step 2: WR toggles LOW -> data = 0x42, WR = 0 (total = 0x42)
-    self.assertEqual(0x42, self.pin_history[2][1] & 0x1FF)
+    self.assertEqual(0x42, self.pin_history[1][1] & 0x1FF)
     # Step 3: WR toggles HIGH -> data = 0x42, WR = 1 (total = 0x142)
-    self.assertEqual(0x142, self.pin_history[3][1] & 0x1FF)
+    self.assertEqual(0x142, self.pin_history[2][1] & 0x1FF)
 
     # Second byte: 0xA5 (165)
     # Step 4: data bus becomes 0xA5, WR remains 1 (total = 0x1A5)
-    self.assertEqual(0x1A5, self.pin_history[4][1] & 0x1FF)
+    self.assertEqual(0x1A5, self.pin_history[3][1] & 0x1FF)
     # Step 5: WR toggles LOW -> data = 0xA5, WR = 0 (total = 0xA5)
-    self.assertEqual(0xA5, self.pin_history[5][1] & 0x1FF)
+    self.assertEqual(0xA5, self.pin_history[4][1] & 0x1FF)
     # Step 6: WR toggles HIGH -> data = 0xA5, WR = 1 (total = 0x1A5)
-    self.assertEqual(0x1A5, self.pin_history[6][1] & 0x1FF)
+    self.assertEqual(0x1A5, self.pin_history[5][1] & 0x1FF)
 
   def test_parallel_bus_pins_and_write(self):
     bus = parallel8080.ParallelBus()

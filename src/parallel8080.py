@@ -41,11 +41,11 @@ import logging
 
 
 # SIO atomic register addresses on RP2040 and RP2350. Using the atomic aliases
-# (GPIO_OUT_XOR and GPIO_OUT_CLR) ensures that writes from Core 1 only touch
+# (GPIO_OUT_SET and GPIO_OUT_CLR) ensures that writes from Core 1 only touch
 # GP0-GP8, completely preventing bus collisions with the CYW43 Wi-Fi chip driven
 # on GP23, GP24, GP25, GP29 by Core 0. Section 3.1.4 / SIO register map:
 # https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf
-_GPIO_OUT_XOR = micropython.const(0xD000001C)
+_GPIO_OUT_SET = micropython.const(0xD0000014)
 _GPIO_OUT_CLR = micropython.const(0xD0000018)
 
 # The strobe is GP8, and _blast has that baked in as 0x100 because viper wants
@@ -70,7 +70,7 @@ _MAX_PAD = micropython.const(64)
 def _blast(buf: ptr8, count: int, pad: int):
   """Puts every byte of buf on the bus using atomic SIO registers.
 
-  Writing to GPIO_OUT_XOR and GPIO_OUT_CLR modifies only the bits that are
+  Writing to GPIO_OUT_SET and GPIO_OUT_CLR modifies only the bits that are
   explicitly targeted. Bits 9-31 (including CYW43 Wi-Fi pins 23, 24, 25, 29)
   are completely untouched, guaranteeing zero dual-core GPIO clobbering.
 
@@ -78,30 +78,29 @@ def _blast(buf: ptr8, count: int, pad: int):
   settled on the bus before the strobe goes down, and pad decides how long it
   stays down.
   """
-  xor_reg = ptr32(0xD000001C)  # _GPIO_OUT_XOR; viper wants literal.
+  set_reg = ptr32(0xD0000014)  # _GPIO_OUT_SET; viper wants literal.
   clr_reg = ptr32(0xD0000018)  # _GPIO_OUT_CLR; viper wants literal.
 
-  # Initialize data lines GP0..GP7 to 0 (WR is left HIGH):
-  clr_reg[0] = 0xFF
-  b_prev = 0
   i = 0
   while i < count:
-    b_new = int(buf[i])
-    # 1. Update data lines GP0..GP7 with stable data while WR (GP8) is HIGH:
-    xor_reg[0] = b_prev ^ b_new
-    b_prev = b_new
+    b = int(buf[i])
+    # 1. Update data lines GP0..GP7 while write strobe (GP8) is HIGH (0x100):
+    clr_reg[0] = (~b) & 0xFF
+    set_reg[0] = b | 0x100
 
-    # 2. Toggle write strobe GP8 LOW (bit 8 only: 0x100):
-    xor_reg[0] = 0x100
+    # 2. Pull write strobe GP8 LOW (bit 8 only: 0x100):
+    clr_reg[0] = 0x100
 
     # 3. Hold strobe LOW for minimum pulse width (Table 13-3: >= 60ns):
     j = 0
     while j < pad:
+      clr_reg[0] = 0x100
       j += 1
 
-    # 4. Toggle write strobe GP8 HIGH (rising edge latches data into SSD1322):
-    xor_reg[0] = 0x100
+    # 4. Pull write strobe GP8 HIGH (rising edge latches data into SSD1322):
+    set_reg[0] = 0x100
     i += 1
+
 
 
 def _measure_pad() -> int:
