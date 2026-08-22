@@ -16,58 +16,30 @@
 # COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 # IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-"""Module for communicating with the Realtime Trains API.
+"""Module for communicating with the Realtime Trains API."""
 
-This talks to the next generation API at https://data.rtt.io. Authentication is
-a bearer token: the long-life token from the API portal is a refresh token,
-which is exchanged for a short-lived access token.
-"""
-
-import collections
-import errno
-import json
-import gc
-import select
-import socket
 import ssl
-import time
-import _thread
 
-import fallback
 import logging
-import utils
-
-
-# What connect() reports when the connection is not refused but simply not
-# finished being made, none of which is a failure: the poll that follows is
-# what waits for it either way. EISCONN is in there because MicroPython
-# retries a connect the system interrupted, and by the retry it has succeeded;
-# the simulator provokes this every time, since collecting garbage on the
-# render thread is what does the interrupting. It has no name in MicroPython's
-# errno and no one number across platforms, hence both: 56 on a Mac, 106 on
-# the board.
-_CONNECT_UNDERWAY = (errno.EINPROGRESS, errno.EALREADY, 56, 106)
-
-# Long enough for slow TLS handshakes, DNS resolution, and packet retries
-# over 2.4GHz Wi-Fi without prematurely aborting.
-_REQUEST_TIMEOUT = 15
-_MAXRESPONSE_SIZE = 40 * 1024
-
-# How far ahead to ask for departures. The panel only has room for a handful,
-# but a short window leaves quiet stations looking empty.
-_TIME_WINDOW_MINS = 180
-
-
 from models import BoardSnapshot, Departure, Response, Station
 from net.errors import AuthError, RateLimitError
 from net.http import http_request
+import services.rtt as rtt
+from services.rtt import (
+    fallback_calling_points,
+    fallback_departures,
+    lineup_url as _lineup_url,
+    parse_calling_points,
+    parse_departures,
+    to_epoch as _to_epoch,
+    to_hhmm as _to_hhmm,
+)
+from state import StateController
 
-# Long enough that a night-long outage costs a handful of requests, short
-# enough that the board is current again within half an hour of the API
-# coming back.
-# How long to wait after a failure, then after a second one in a row, and so
-# on. A blip deserves another go almost straight away; something still broken
-# after five minutes does not deserve asking every two.
+_REQUEST_TIMEOUT = 15
+_MAXRESPONSE_SIZE = 40 * 1024
+_TIME_WINDOW_MINS = 180
+
 _BACKOFF_SECS = (1, 5, 30, 120, 600, 1800)
 
 
@@ -86,37 +58,6 @@ def retry_wait(error, failures_in_a_row: int, interval: int) -> int:
 
   step = min(failures_in_a_row, len(_BACKOFF_SECS))
   return _BACKOFF_SECS[step - 1]
-
-
-def _to_hhmm(timestamp: str) -> int:
-  """'2026-08-15T18:30:00' -> 1830."""
-  return int(timestamp[11:13] + timestamp[14:16])
-
-
-def _to_epoch(timestamp: str) -> int:
-  """'2026-08-15T18:30:00' -> seconds since the epoch."""
-  return time.mktime((
-      int(timestamp[0:4]),
-      int(timestamp[5:7]),
-      int(timestamp[8:10]),
-      int(timestamp[11:13]),
-      int(timestamp[14:16]),
-      0,
-      0,
-      0,
-  ))
-
-
-import services.rtt as rtt
-from services.rtt import (
-    fallback_calling_points,
-    fallback_departures,
-    lineup_url as _lineup_url,
-    parse_calling_points,
-    parse_departures,
-    to_epoch as _to_epoch,
-    to_hhmm as _to_hhmm,
-)
 
 
 def _get_json(url: str, access_token: str, buffer=None, ssl_context=None):
@@ -175,9 +116,6 @@ def get_calling_points(
       ),
       station,
   )
-
-
-from state import StateController
 
 
 class DepartureUpdater:

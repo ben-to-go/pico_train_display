@@ -212,6 +212,9 @@ variables Grafana hands out, so `sim/run.sh` ships its log without a
 display given away sends its log home without anyone pasting a header into the
 setup page. See [Giving one away](#giving-one-away).
 
+For querying logs from Grafana Cloud or using the CLI tool `tools/logs.py`, see
+[docs/observability.md](observability.md).
+
 ## If nothing appears
 
 - **Blank panel.** Check 3V3 and GND first, then that all eight data lines are
