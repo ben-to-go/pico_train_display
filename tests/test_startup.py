@@ -323,9 +323,9 @@ class RequestsAtStartupTest(unittest.TestCase):
 
     self.assertEqual(1, self.slept, 'the backoff, not the whole interval')
 
-  def test_reboots_immediately_on_socket_timeout(self):
-    # An explicit socket timeout (e.g. ETIMEDOUT / EHOSTUNREACH) raises _RadioIsGone
-    # immediately to power-cycle the wedged radio hardware.
+  def test_reboots_on_consecutive_socket_timeouts(self):
+    # After 3 consecutive socket timeouts (e.g. ETIMEDOUT / EHOSTUNREACH),
+    # raises _RadioIsGone to power-cycle the wedged radio hardware.
     failed = [0]
 
     class _TimesOut:
@@ -335,7 +335,7 @@ class RequestsAtStartupTest(unittest.TestCase):
 
       def update(self):
         failed[0] += 1
-        if failed[0] == 2:
+        if failed[0] >= 2:
           raise OSError(110, 'connection timed out')
 
     main.trains = types.SimpleNamespace(
@@ -344,6 +344,30 @@ class RequestsAtStartupTest(unittest.TestCase):
 
     with self.assertRaises(main._RadioIsGone):
       self._run()
+
+  def test_transient_socket_timeout_does_not_reboot(self):
+    # A single transient socket timeout does not reboot immediately; it retries.
+    failed = [0]
+
+    class _TransientTimeout:
+
+      def __init__(self, *args, **kwargs):
+        pass
+
+      def update(self):
+        failed[0] += 1
+        if failed[0] == 2:
+          raise OSError(110, 'connection timed out')
+        if failed[0] > 2:
+          raise _Stop()
+
+    main.trains = types.SimpleNamespace(
+        DepartureUpdater=_TransientTimeout, retry_wait=lambda e, interval: 120
+    )
+
+    self._run()
+    self.assertEqual(3, failed[0])
+
 
   def test_reboots_immediately_when_wifi_drops(self):
     # When wlan.isconnected() becomes False, raises _RadioIsGone immediately.

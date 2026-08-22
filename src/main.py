@@ -286,26 +286,30 @@ def run(config: config_module.Config):
         if isinstance(e, RateLimitError):
           wait = max(update_interval, e.retry_after)
           logging.log('Rate limited (429), backing off for {}s...', wait)
-        elif is_socket_error or (wlan is not None and not wlan.isconnected()):
+        elif (wlan is not None and not wlan.isconnected()) or (
+            is_socket_error and failures >= 3
+        ):
           logging.error(
-              'Network/socket error ({}), rebooting immediately to reset '
-              'radio...',
+              'Network/socket error ({}, {} consecutive failures), '
+              'rebooting immediately to reset radio...',
               e,
+              failures,
           )
           raise _RadioIsGone()
         else:
-          # Remote API server error (500, 502, 503, 404, bad format).
-          # Wi-Fi is fine; the API server is having issues.
+          # Remote API server error or transient socket timeout.
           # Keep the display running (with clock + stale dot) and retry on
-          # normal interval without rebooting in a loop.
+          # normal interval without rebooting immediately.
           wait = update_interval
           logging.error(
-              'API update failed ({}), will retry in {}s: {}',
+              'API update failed ({}, failure count {}), will retry in {}s: {}',
               type(e).__name__,
+              failures,
               wait,
               e,
           )
           logging.exception(e)
+
 
   finally:
     logging.log('Main thread closing...')
