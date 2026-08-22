@@ -116,6 +116,39 @@ class SSD1322PartialFlushTest(unittest.TestCase):
     display.flush()
     self.assertEqual(0, len(bus.writes))
 
+  def test_single_row_change_sends_only_128_bytes(self):
+    bus = MockBus()
+    display = SSD1322(bus, width=256, height=64)
+    bus.writes.clear()
+
+    # Modify only row 63 (e.g. 1-pixel stale dot)
+    row_bytes = 128
+    display._buffer[63 * row_bytes + 127] = 0x0F
+    display.flush()
+
+    row_cmds = [w for w in bus.writes if len(w[0]) == 2 and w[1] == 1]
+    self.assertIn((bytes([63, 63]), 1), row_cmds)
+
+    data_writes = [w for w in bus.writes if len(w[0]) == 128 and w[1] == 1]
+    self.assertEqual(1, len(data_writes))
+
+  def test_clock_row_change_sends_9_rows_1152_bytes(self):
+    bus = MockBus()
+    display = SSD1322(bus, width=256, height=64)
+    bus.writes.clear()
+
+    # Modify rows 49..57 (clock row)
+    row_bytes = 128
+    for r in range(49, 58):
+      display._buffer[r * row_bytes + 60] = 0xF0
+    display.flush()
+
+    row_cmds = [w for w in bus.writes if len(w[0]) == 2 and w[1] == 1]
+    self.assertIn((bytes([49, 57]), 1), row_cmds)
+
+    data_writes = [w for w in bus.writes if len(w[0]) == 9 * 128 and w[1] == 1]
+    self.assertEqual(1, len(data_writes))
+
 
 if __name__ == '__main__':
   unittest.main()
