@@ -34,15 +34,29 @@ class WalTest(unittest.TestCase):
   def test_load_nonexistent_file_returns_empty_list(self):
     self.assertEqual([], wal.load(path=self.path))
 
-  def test_load_corrupt_json_returns_empty_list(self):
+  def test_load_corrupt_json_purges_file_and_returns_empty(self):
     with open(self.path, 'w') as f:
       f.write('{corrupt json')
+    self.assertTrue(os.path.exists(self.path))
     self.assertEqual([], wal.load(path=self.path))
+    # File was purged from disk
+    self.assertFalse(os.path.exists(self.path))
 
-  def test_load_non_list_json_returns_empty_list(self):
+  def test_load_non_list_json_purges_file_and_returns_empty(self):
     with open(self.path, 'w') as f:
       f.write('{"not": "a list"}')
+    self.assertTrue(os.path.exists(self.path))
     self.assertEqual([], wal.load(path=self.path))
+    self.assertFalse(os.path.exists(self.path))
+
+  def test_load_cleans_up_orphaned_tmp_file(self):
+    tmp_path = self.path + '.tmp'
+    with open(tmp_path, 'w') as f:
+      f.write('partial write before power cut')
+    self.assertTrue(os.path.exists(tmp_path))
+
+    self.assertEqual([], wal.load(path=self.path))
+    self.assertFalse(os.path.exists(tmp_path))
 
   def test_save_empty_list_clears_file(self):
     wal.save([[100, 'INFO', 'test', 'run1']], path=self.path)

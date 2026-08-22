@@ -56,8 +56,25 @@ def save(entries: list, path: str = DEFAULT_PATH):
       pass
 
 
+def _exists(path: str) -> bool:
+  try:
+    os.stat(path)
+    return True
+  except OSError:
+    return False
+
+
 def load(path: str = DEFAULT_PATH) -> list:
-  """Loads persisted log entries from disk. Returns [] on missing or invalid."""
+  """Loads persisted log entries from disk. Returns [] on missing or invalid.
+
+  Automatically purges any unreadable, corrupted, or leftover temporary files.
+  """
+  # Clean up any leftover temporary file from a previously interrupted write
+  clear(path + '.tmp')
+
+  if not _exists(path):
+    return []
+
   try:
     with open(path, 'r') as f:
       data = json.load(f)
@@ -65,12 +82,16 @@ def load(path: str = DEFAULT_PATH) -> list:
         return data
   except (OSError, ValueError):
     pass
+
+  # If the file exists but was corrupted or not a list, remove it from flash
+  clear(path)
   return []
 
 
 def clear(path: str = DEFAULT_PATH):
-  """Deletes the persisted log file if it exists."""
-  try:
-    os.remove(path)
-  except OSError:
-    pass
+  """Deletes the persisted log file and any leftover temporary file."""
+  for p in (path, path + '.tmp'):
+    try:
+      os.remove(p)
+    except OSError:
+      pass
