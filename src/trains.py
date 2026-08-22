@@ -48,9 +48,9 @@ import utils
 # the board.
 _CONNECT_UNDERWAY = (errno.EINPROGRESS, errno.EALREADY, 56, 106)
 
-# Short, because a slow API shouldn't leave the board frozen: give up and show
-# the last board we have instead.
-_REQUEST_TIMEOUT = 5
+# Long enough for slow TLS handshakes, DNS resolution, and packet retries
+# over 2.4GHz Wi-Fi without prematurely aborting.
+_REQUEST_TIMEOUT = 15
 _MAXRESPONSE_SIZE = 40 * 1024
 
 # How far ahead to ask for departures. The panel only has room for a handful,
