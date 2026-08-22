@@ -36,6 +36,11 @@ happen before the firmware is imported rather than after.
 import os
 import sys
 
+try:
+  import asyncio  # noqa: F401
+except ImportError:
+  pass
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 # Imported here rather than merely uncached, so that it is this one every

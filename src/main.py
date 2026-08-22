@@ -140,114 +140,39 @@ def _no_power_saving(wlan: network.WLAN):
     logging.exception(e)
 
 
-def _wifi_status_desc(status: int) -> str:
-  statuses = {
-      0: 'STAT_IDLE',
-      1: 'STAT_CONNECTING',
-      2: 'STAT_WRONG_PASSWORD',
-      3: 'STAT_GOT_IP',
-      -1: 'STAT_CONNECT_FAIL',
-      -2: 'STAT_NO_AP_FOUND',
-      -3: 'STAT_WRONG_PASSWORD',
-  }
-  return statuses.get(status, str(status))
+from services import ntp, wifi
 
 
-def _connect(
-    ssid: str, password: str, screen: display.Display | None = None
-) -> network.WLAN | None:
-  """Associates with the configured network, or gives up and returns None.
-
-  Wifi is the first link in the chain to the API and it breaks like any other:
-  the network gets renamed, the password changes, the router is off. None of
-  that is worth resetting the board over, because it has departures to show
-  either way, so this reports failure rather than raising it.
-
-  With no screen it retries quietly, leaving whatever is on the panel alone.
-  """
+def _connect(ssid: str, password: str, screen: display.Display | None = None):
+  wifi.network = network
   widget = (
       widgets.MessageWidget(screen, _WIFI_CONNECT, fonts.DEFAULT_FONT)
       if screen is not None
       else None
   )
-  logging.log('Connecting to SSID: {} PASSWORD: {}', ssid, '*' * len(password))
 
-  try:
-    if hasattr(network, 'AP_IF'):
-      ap = network.WLAN(network.AP_IF)
-      if ap.active():
-        ap.active(False)
+  def _progress(i: int):
+    if widget is not None and screen is not None:
+      widget.render('{}{}'.format(_WIFI_CONNECT, '.' * (i % 4)))
+      screen.flush()
 
-    wlan = network.WLAN(network.STA_IF)
-    wlan.active(False)
-    wlan.active(True)
-    _no_power_saving(wlan)
-    wlan.connect(ssid, password if password else None)
-
-    for i in range(_CONNECT_TIMEOUT):
-      if wlan.isconnected():
-        ifc = wlan.ifconfig()
-        logging.log('Connected! IP: {}, Gateway: {}, DNS: {}', ifc[0], ifc[2], ifc[3])
-        return wlan
-
-      if wlan.status() < 0:
-        logging.log(
-            'Wifi link failure: status={} ({}), retrying...',
-            wlan.status(),
-            _wifi_status_desc(wlan.status()),
-        )
-        try:
-          wlan.disconnect()
-        except Exception:
-          pass
-        time.sleep_ms(200)
-        wlan.connect(ssid, password if password else None)
-
-      if widget is not None:
-        widget.render('{}{}'.format(_WIFI_CONNECT, '.' * (i % 4)))
-        screen.flush()
-      time.sleep(1)
-  except Exception as e:
-    # A rejected password surfaces differently on every port, and the radio
-    # itself can refuse to come up. They all mean the same thing here.
-    logging.log('Wifi connect failed!')
-    logging.exception(e)
-    return None
-
-  logging.log(
-      'Failed to connect to wifi in {} secs: status={} ({})',
-      _CONNECT_TIMEOUT,
-      wlan.status(),
-      _wifi_status_desc(wlan.status()),
+  return wifi.connect(
+      ssid, password, timeout=_CONNECT_TIMEOUT, on_progress=_progress
   )
-  return None
+
+
+def _scan_networks() -> list[str]:
+  wifi.network = network
+  return wifi.scan_networks()
+
+
+def _no_power_saving(wlan):
+  wifi.network = network
+  return wifi._no_power_saving(wlan)
 
 
 def _configure_time() -> bool:
-  """Sets the clock from NTP, reporting whether it managed to.
-
-  The same chain: no network means no time either. Bounded, because a board
-  that cannot reach NTP still has a display to draw.
-  """
-  logging.log('Configure datetime.')
-  last_error = None
-  for _ in range(_CONNECT_TIMEOUT):
-    try:
-      ntptime.settime()
-      t = time.localtime()
-      logging.log('Time set to UTC {}/{}/{} {}:{}', *t[:5])
-      return True
-    except Exception as e:
-      # Kept rather than logged, because fifteen of these say no more than
-      # the last one does. Without the clock nothing else is stamped right,
-      # so what stopped it is worth having.
-      last_error = e
-      time.sleep(1)
-
-  logging.log('Failed to reach NTP in {} secs: {}', _CONNECT_TIMEOUT, last_error)
-  if last_error is not None:
-    logging.exception(last_error)
-  return False
+  return ntp.sync_time(timeout=_CONNECT_TIMEOUT)
 
 
 def _render_thread(
@@ -433,57 +358,12 @@ def run(config: config_module.Config):
       screen.close()
 
 
-async def _setup_access_point():
-  ap = network.WLAN(network.AP_IF)
-  ap.config(ssid=_SETUP_WIFI_SSID, password=_SETUP_WIFI_PASSWORD)
-  ap.active(True)
-  logging.log('Creating AP wifi with SSID: {}', _SETUP_WIFI_SSID)
-
-  # active() is the radio being up, which is all the portal needs. On an
-  # access point isconnected() means a station has joined, and waiting for
-  # that before showing the instructions that say which network to join is a
-  # deadlock: nobody joins, this raises, and the board resets, having shown a
-  # blank screen the whole time.
-  for _ in range(_CONNECT_TIMEOUT):
-    if ap.active():
-      return ap
-    await asyncio.sleep(1)
-
-  raise OSError(
-      'Failed to bring up access point in {} secs'.format(_CONNECT_TIMEOUT)
-  )
-
-
-def _scan_networks() -> list[str]:
-  """Finds nearby Wi-Fi network names, sorted by signal strength."""
-  try:
-    sta = network.WLAN(network.STA_IF)
-    sta.active(True)
-    results = sta.scan()
-    ssids = []
-    seen = set()
-    for s in sorted(
-        results, key=lambda x: x[3] if len(x) > 3 else 0, reverse=True
-    ):
-      ssid_raw = s[0]
-      if isinstance(ssid_raw, (bytes, bytearray)):
-        name = ssid_raw.decode('utf-8', 'ignore').strip()
-      else:
-        name = str(ssid_raw).strip()
-      if name and name not in seen:
-        seen.add(name)
-        ssids.append(name)
-    return ssids
-  except Exception as e:
-    logging.log('Could not scan for wifi networks.')
-    logging.exception(e)
-    return []
-
-
 async def setup(screen: display.Display):
   event = asyncio.Event()
-  ssids = _scan_networks()
-  ap = await _setup_access_point()
+  ssids = wifi.scan_networks()
+  ap = await wifi.setup_access_point(
+      _SETUP_WIFI_SSID, _SETUP_WIFI_PASSWORD, timeout=_CONNECT_TIMEOUT
+  )
   ip_address = ap.ifconfig()[0]
 
   setup_message = _SETUP_MESSAGE.format(
