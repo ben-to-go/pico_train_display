@@ -109,7 +109,11 @@ def _arm_shutdown_watchdog():
     logging.exception(e)
 
 
-def _connect(ssid: str, password: str, screen: display.Display | None = None):
+def _connect(
+    networks: tuple[tuple[str, str], ...] | list[tuple[str, str]] | str,
+    password: str = '',
+    screen: display.Display | None = None,
+):
   """Connects to station Wi-Fi with animated progress rendering on screen."""
   widget = (
       widgets.MessageWidget(screen, _WIFI_CONNECT, fonts.DEFAULT_FONT)
@@ -122,13 +126,18 @@ def _connect(ssid: str, password: str, screen: display.Display | None = None):
       widget.render('{}{}'.format(_WIFI_CONNECT, '.' * (i % 4)))
       screen.flush()
 
-  return wifi.connect(
-      ssid,
-      password,
+  if isinstance(networks, str):
+    network_list = ((networks, password),) if networks else ()
+  else:
+    network_list = networks
+
+  return wifi.connect_known(
+      network_list,
       timeout=_CONNECT_TIMEOUT,
       on_progress=_progress,
       network_module=network,
   )
+
 
 
 def _scan_networks() -> list[str]:
@@ -194,7 +203,7 @@ def run(config: config_module.Config):
     _log_memory()
     gc.threshold(gc.mem_free() // 4 + gc.mem_alloc())
 
-    wlan = _connect(config.wifi.ssid, config.wifi.password, screen=screen)
+    wlan = _connect(config.wifi.networks, screen=screen)
     if wlan is None:
       # A wrong password and a network that has moved look the same from here,
       # and both are fixed by the same screen. Asking is the only thing the

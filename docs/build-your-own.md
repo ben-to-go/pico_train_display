@@ -107,6 +107,7 @@ reads — and build:
 ```
 RTT_TOKEN=your-token
 OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic%20...
+KNOWN_WIFI=HomeNetwork:SecretPassword,OfficeNet:WorkPassword
 ```
 
 ```
@@ -117,15 +118,20 @@ The build prints what it baked in, and how long each value was, so a `.env` it
 could not read is obvious rather than silent:
 
 ```
-  Baked in: RTT_TOKEN (32 chars), OTEL_HEADERS (96 chars)
+  Baked in: RTT_TOKEN (32 chars), OTEL_HEADERS (96 chars), KNOWN_WIFI (58 chars)
 ```
 
-Flash that image and the setup page asks for the wifi and nothing else.
+Flash that image and the display scans for available Wi-Fi networks on startup,
+connecting automatically to the best available known network. It only falls
+back to the setup access point if none of the known networks are visible or
+their credentials fail.
+
 Everything else — the tokens, the station codes, the display options — is
 folded into **Advanced settings**, collapsed, with the defaults the page has
 always had. Anything left blank there falls back to what was baked in, and
 anything typed in wins, which is how a revoked token gets replaced without a
 rebuild.
+
 
 A build with no `.env` bakes nothing and opens that section by itself, since
 then there is an API token in it that has to be filled in. So the released

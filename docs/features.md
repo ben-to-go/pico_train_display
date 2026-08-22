@@ -91,7 +91,8 @@ The system runs on the **Raspberry Pi Pico 2 W** (RP2350 microcontroller), using
 - **Mesh Deduplication**: Deduplicates mesh networks sharing the same SSID across multiple BSSIDs.
 
 ### 🎁 Zero-Solder Giveaway Mode
-- **Baked-In API Tokens**: Build firmware with pre-embedded API tokens so recipients only need to enter their home Wi-Fi details.
+- **Baked-In API Tokens & Known Wi-Fi**: Build firmware with pre-embedded API tokens and known Wi-Fi network credentials (`KNOWN_WIFI`) so the display automatically joins home or office Wi-Fi without needing manual provisioning.
+
 
 ---
 

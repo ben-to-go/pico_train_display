@@ -126,6 +126,80 @@ def connect(
   return None
 
 
+def connect_known(
+    known_networks: tuple[tuple[str, str], ...] | list[tuple[str, str]],
+    *,
+    timeout: int = _DEFAULT_TIMEOUT,
+    on_progress=None,
+    network_module=None,
+):
+  """Connects to the best available known Wi-Fi network.
+
+  Scans for visible SSIDs first and attempts to connect to available known
+  networks in order of signal strength. If no known networks are visible or
+  the scan fails, falls back to attempting known networks directly.
+  """
+  if not known_networks:
+    return None
+
+  known_dict = {ssid: password for ssid, password in known_networks if ssid}
+  if not known_dict:
+    return None
+
+  # 1. Scan for nearby visible networks
+  visible_ssids = scan_networks(network_module=network_module)
+
+  # 2. Pick candidates that are both visible and known, in scan signal order
+  candidates = [
+      (ssid, known_dict[ssid]) for ssid in visible_ssids if ssid in known_dict
+  ]
+
+  if candidates:
+    logging.log(
+        'Found {} known Wi-Fi network(s) in scan: {}',
+        len(candidates),
+        ', '.join(ssid for ssid, _ in candidates),
+    )
+    for ssid, password in candidates:
+      wlan = connect(
+          ssid,
+          password,
+          timeout=timeout,
+          on_progress=on_progress,
+          network_module=network_module,
+      )
+      if wlan is not None:
+        return wlan
+
+    # All visible candidates failed to connect (e.g. bad password)
+    return None
+
+  # 3. If scan returned nothing (e.g. scan unsupported or radio off), try known networks directly
+  if not visible_ssids:
+    logging.log(
+        'Wi-Fi scan returned no networks; trying known networks directly...'
+    )
+    for ssid, password in known_networks:
+      if not ssid:
+        continue
+      wlan = connect(
+          ssid,
+          password,
+          timeout=timeout,
+          on_progress=on_progress,
+          network_module=network_module,
+      )
+      if wlan is not None:
+        return wlan
+
+  # 4. If scan found networks but NONE of our known networks, log and return None
+  logging.log(
+      'None of {} known Wi-Fi network(s) found in scan.',
+      len(known_dict),
+  )
+  return None
+
+
 def scan_networks(network_module=None) -> list[str]:
   """Finds nearby Wi-Fi network SSIDs, sorted by signal strength."""
   net = network_module if network_module is not None else network

@@ -148,12 +148,74 @@ class OtelConfig:
     pass
 
 
-class WifiConfig:
-  """WiFi configuration."""
+def _parse_known_wifi(raw: str | list | None) -> list[tuple[str, str]]:
+  """Parses known Wi-Fi networks from a string (comma-separated or JSON) or list."""
+  if not raw:
+    return []
+  if isinstance(raw, list):
+    networks = []
+    for item in raw:
+      if isinstance(item, dict):
+        ssid = item.get('ssid', '')
+        pw = item.get('password', '')
+        if ssid:
+          networks.append((str(ssid).strip(), str(pw).strip()))
+      elif isinstance(item, (tuple, list)) and len(item) >= 2:
+        networks.append((str(item[0]).strip(), str(item[1]).strip()))
+    return networks
 
-  def __init__(self, ssid: str, password: str):
-    self.ssid = ssid
-    self.password = password
+  if isinstance(raw, str):
+    raw = raw.strip()
+    if raw.startswith('[') and raw.endswith(']'):
+      try:
+        import json
+        return _parse_known_wifi(json.loads(raw))
+      except Exception:
+        pass
+    networks = []
+    for entry in raw.split(','):
+      entry = entry.strip()
+      if not entry:
+        continue
+      if ':' in entry:
+        ssid, pw = entry.split(':', 1)
+      else:
+        ssid, pw = entry, ''
+      if ssid.strip():
+        networks.append((ssid.strip(), pw.strip()))
+    return networks
+
+  return []
+
+
+class WifiConfig:
+  """WiFi configuration supporting multiple known networks and baked-in credentials."""
+
+  def __init__(
+      self,
+      ssid: str = '',
+      password: str = '',
+  ):
+    getenv = getattr(os, 'getenv', None)
+    env_wifi = getenv('KNOWN_WIFI') if getenv else None
+    baked_wifi = from_firmware('KNOWN_WIFI')
+
+    explicit_networks = []
+    if ssid:
+      explicit_networks.append((ssid.strip(), password.strip()))
+
+    fallback_networks = _parse_known_wifi(env_wifi or baked_wifi)
+
+    seen = set()
+    combined = []
+    for s, p in explicit_networks + fallback_networks:
+      if s and s not in seen:
+        seen.add(s)
+        combined.append((s, p))
+
+    self.networks = tuple(combined)
+    self.ssid = self.networks[0][0] if self.networks else ''
+    self.password = self.networks[0][1] if self.networks else ''
 
   def validate(self):
     pass
@@ -241,7 +303,27 @@ def load(config_json) -> Config:
   kwargs = {}
   for k, v in config_json.items():
     if k == 'wifi':
-      kwargs[k] = WifiConfig(**v)
+      if isinstance(v, dict):
+        wifi_obj = WifiConfig(
+            ssid=v.get('ssid', ''),
+            password=v.get('password', ''),
+        )
+        if 'networks' in v:
+          extra_nets = _parse_known_wifi(v['networks'])
+          seen = set()
+          merged = []
+          for s, p in extra_nets + list(wifi_obj.networks):
+            if s and s not in seen:
+              seen.add(s)
+              merged.append((s, p))
+          wifi_obj.networks = tuple(merged)
+          wifi_obj.ssid = wifi_obj.networks[0][0] if wifi_obj.networks else ''
+          wifi_obj.password = (
+              wifi_obj.networks[0][1] if wifi_obj.networks else ''
+          )
+        kwargs[k] = wifi_obj
+      else:
+        kwargs[k] = v
     elif k == 'display':
       kwargs[k] = DisplayConfig(**v)
     elif k == 'rtt':
@@ -253,3 +335,4 @@ def load(config_json) -> Config:
     else:
       kwargs[k] = v
   return Config(**kwargs)
+
