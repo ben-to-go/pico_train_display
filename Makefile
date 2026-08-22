@@ -10,6 +10,9 @@ MICROPYTHON_DIR ?= $(HOME)/micropython
 MICROPYTHON_VERSION ?= v1.28.0
 export MICROPYTHON ?= $(MICROPYTHON_DIR)/ports/unix/build-standard/micropython
 
+# Detect available CPU cores portably across macOS, Linux, and BSD.
+NPROC ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
+
 BOARD ?= RPI_PICO2_W
 RP2_BUILD = $(MICROPYTHON_DIR)/ports/rp2/build-$(BOARD)
 
@@ -34,9 +37,10 @@ test:
 # Incremental: with the checkout and the build directory already there, a
 # change to src/ is a few seconds, which is the point of having it here.
 firmware: baked | $(MICROPYTHON_DIR)
-	$(MAKE) -C $(MICROPYTHON_DIR)/mpy-cross
-	$(MAKE) -C $(MICROPYTHON_DIR)/ports/rp2 BOARD=$(BOARD) submodules
-	$(MAKE) -C $(MICROPYTHON_DIR)/ports/rp2 -j $(shell nproc) BOARD=$(BOARD) \
+	$(MAKE) -C $(MICROPYTHON_DIR)/mpy-cross -j $(NPROC)
+	@[ -f $(MICROPYTHON_DIR)/lib/pico-sdk/README.md ] || \
+		$(MAKE) -C $(MICROPYTHON_DIR)/ports/rp2 BOARD=$(BOARD) submodules
+	$(MAKE) -C $(MICROPYTHON_DIR)/ports/rp2 -j $(NPROC) BOARD=$(BOARD) \
 		FROZEN_MANIFEST=$(CURDIR)/manifest.py
 	@python3 tools/check_firmware.py $(RP2_BUILD)/firmware.uf2 \
 		--board $(BOARD) --elf $(RP2_BUILD)/firmware.elf
@@ -58,6 +62,7 @@ firmware-depend: | $(MICROPYTHON_DIR)
 	sudo apt-get update
 	sudo apt-get install -y cmake gcc-arm-none-eabi \
 		libnewlib-arm-none-eabi build-essential
+	$(MAKE) -C $(MICROPYTHON_DIR)/ports/rp2 BOARD=$(BOARD) submodules
 
 # Everything the simulator needs, from nothing. Host tools only.
 sim-depend: | $(MICROPYTHON_DIR)
@@ -80,5 +85,5 @@ $(MICROPYTHON_DIR):
 # generated qstrs stale, which fails as MP_QSTR_GIL undeclared.
 unix-port:
 	@$(MAKE) -C $(MICROPYTHON_DIR)/ports/unix clean
-	@$(MAKE) -C $(MICROPYTHON_DIR)/ports/unix \
+	@$(MAKE) -C $(MICROPYTHON_DIR)/ports/unix -j $(NPROC) \
 		MICROPY_PY_FFI=0 MICROPY_PY_THREAD_GIL=1
