@@ -22,6 +22,7 @@ beside it: [docs/display-format.md](docs/display-format.md).
   drops out.
 - [Remote observability & logging](docs/observability.md) via OpenTelemetry
   and Grafana Cloud Loki.
+- [Execution lifecycle & features guide](docs/execution-stages.md) detailing what the app does at every stage.
 - Two boards and fifteen wires. Nothing to solder, nothing to print.
 
 ## Installation
