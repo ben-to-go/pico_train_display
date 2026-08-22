@@ -54,3 +54,32 @@ if not hasattr(sys, 'print_exception'):
     print('Traceback (most recent call last):\n  {!r}'.format(e), file=file)
 
   sys.print_exception = _print_exception
+
+import builtins
+
+class _MockPtr:
+  def __init__(self, addr=None):
+    self.addr = addr
+  def __getitem__(self, idx):
+    return 0
+  def __setitem__(self, idx, val):
+    pass
+
+if not hasattr(builtins, 'ptr8'):
+  builtins.ptr8 = _MockPtr
+if not hasattr(builtins, 'ptr32'):
+  builtins.ptr32 = _MockPtr
+
+import time
+
+if not hasattr(time, 'ticks_us'):
+  time.ticks_us = lambda: int(time.time() * 1_000_000)
+if not hasattr(time, 'ticks_ms'):
+  time.ticks_ms = lambda: int(time.time() * 1_000)
+if not hasattr(time, 'ticks_diff'):
+  time.ticks_diff = lambda a, b: a - b
+if not hasattr(time, 'sleep_ms'):
+  time.sleep_ms = lambda ms: time.sleep(ms / 1000.0)
+if not hasattr(time, 'sleep_us'):
+  time.sleep_us = lambda us: time.sleep(us / 1_000_000.0)
+
