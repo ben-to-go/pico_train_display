@@ -63,6 +63,7 @@ _CS_PIN = micropython.const(11)
 # is 2.5ms of every 16.7ms. Meeting the datasheet costs nothing worth having.
 _CYCLE_NS = micropython.const(300)
 _CALIBRATION_BYTES = micropython.const(1024)
+_MIN_PAD = micropython.const(6)
 _MAX_PAD = micropython.const(64)
 
 
@@ -99,8 +100,14 @@ def _blast(buf: ptr8, count: int, pad: int):
 
     # 4. Pull write strobe GP8 HIGH (rising edge latches data into SSD1322):
     set_reg[0] = 0x100
-    i += 1
 
+    # 5. Hold strobe HIGH for minimum high pulse width (Table 13-3: >= 60ns):
+    j = 0
+    while j < pad:
+      set_reg[0] = 0x100
+      j += 1
+
+    i += 1
 
 
 def _measure_pad() -> tuple[int, int]:
@@ -113,7 +120,7 @@ def _measure_pad() -> tuple[int, int]:
   """
   scratch = bytearray(_CALIBRATION_BYTES)
 
-  pad = 1
+  pad = _MIN_PAD
   ns_per_byte = 0
   while pad < _MAX_PAD:
     start = time.ticks_us()
@@ -124,6 +131,7 @@ def _measure_pad() -> tuple[int, int]:
       return pad, ns_per_byte
     pad += 1
   return _MAX_PAD, ns_per_byte
+
 
 
 class ParallelBus:
