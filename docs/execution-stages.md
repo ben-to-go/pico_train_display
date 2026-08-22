@@ -1,10 +1,10 @@
 # Application Execution Lifecycle & Features
 
-This document explains what happens at every stage of the display's execution lifecycle—from cold boot to steady-state rendering, error recovery, and shutdown—and details all the features active at each step.
+This document explains what happens at every stage of the display's execution lifecycle—from cold boot to steady-state dual-core rendering, non-fatal runtime error recovery, and hardware reset—and details all the features active at each step.
 
 ---
 
-## 🗺️ Lifecycle Flowchart
+## 🗺️ High-Level Lifecycle Flowchart
 
 ```
  [Cold Boot / Power On]
@@ -17,47 +17,103 @@ This document explains what happens at every stage of the display's execution li
  [Stage 3: Wi-Fi & NTP Clock]
            |
            v
- [Stage 4: Initial Departure Fetch] (Fails? -> Use Baked-in Snapshot)
+ [Stage 4: Initial Departure Fetch] (Fails? -> Load Baked-in Fallback Snapshot)
            |
            v
- +-------------------------------------------------------------------------+
- |                         RUNNING STATE (DUAL-CORE)                       |
- |                                                                         |
- |   [Stage 5: Core 1 Render Loop]           [Stage 6: Core 0 Update Loop] |
- |   - 60 Hz timer loop                      - 120s polling interval       |
- |   - Dot-matrix typography                 - Realtime Trains API query   |
- |   - Smooth text scrolling                 - Calling points fetch        |
- |   - Partial row SSD1322 flush             - 401 token auto-renewal      |
- |   - Zero-allocation render                - WAL replay to Grafana Loki  |
- +-------------------------------------------------------------------------+
+ +---------------------------------------------------------------------------------------+
+ |                         STAGE 5: RUNNING STATE (DUAL-CORE ENGINE)                     |
+ |                                                                                       |
+ |   CORE 1: Dedicated 60 FPS Render Loop        CORE 0: Scheduled Polling & Recovery    |
+ |   - Partial row SSD1322 OLED flush            - 120s request pacing                   |
+ |   - Dot-matrix UK rail typography             - Dynamic calling points query          |
+ |   - Smooth sub-pixel text scrolling           - Auto 401 token renewal (<1s)          |
+ |   - Zero-allocation render (No GC pauses)     - Non-fatal error handling & stale dot  |
+ |                                               - Flash WAL replay to Grafana Loki      |
+ +---------------------------------------------------------------------------------------+
            |
-           +-----> [Stage 7: Error Handling & Self-Healing]
-           |       - 429 Rate limit backoff (No reboot)
-           |       - API 5xx / DNS outage -> Keep clock, stale dot (No reboot)
-           |       - Radio/Wi-Fi wedge -> Fast 1.2s hardware reboot
+           | (Fatal Hardware Radio Lockup / Socket Loss: STAT_CONNECTING, EHOSTUNREACH)
            v
- [Stage 8: Graceful Shutdown & Crash Watchdog]
+ [Stage 6: Graceful Shutdown & Crash Watchdog]
            |
            v
-    [Hardware Reset]
+    [Hardware Reset (reboots in 1.2s)]
 ```
 
 ---
 
-## Stage 1: Cold Boot & Configuration Discovery
+## 🔄 The Running State (Dual-Core Execution & Runtime Recovery)
 
-When power is applied to the Pico 2 W, `main.main()` runs first on **Core 0**:
+Once initialized, the application operates as two concurrent loops running on separate CPU cores. **Non-fatal runtime errors are handled entirely within the running state without interrupting the display or rebooting the device**:
+
+```
++-------------------------------------------------------------------------------------------------------------------+
+|                                       RUNNING STATE (DUAL-CORE ARCHITECTURE)                                      |
+|                                                                                                                   |
+|  CORE 1: HIGH-PRIORITY RENDER ENGINE (60 FPS)             CORE 0: ORCHESTRATION, POLLING & RECOVERY (120s)        |
+|  --------------------------------------------             ------------------------------------------------        |
+|                                                                                   |                               |
+|  +-----------------------------------------+                             [Sleep update_interval]                  |
+|  | Loop: every 16.7ms (60 Hz timer)        |                                      |                               |
+|  | 1. Read UK time (RTC + BST offset)      |                             [Check Wi-Fi Link]                       |
+|  | 2. Fetch latest BoardState snapshot     |                                      |                               |
+|  | 3. Render departures & calling points   |                     +----------------+----------------+              |
+|  | 4. Update live clock & blinking seconds |                     |                                 |              |
+|  | 5. Find dirty row span                  |                Link Lost?                         Link OK            |
+|  | 6. Partial flush to SSD1322 parallel bus|                     |                                 |              |
+|  |    (1,152B vs 8,192B full frame)        |              (Raise _RadioIsGone)            [Fetch Departures]      |
+|  +-----------------------------------------+                     |                                 |              |
+|                       ^                                          |                      +----------+----------+   |
+|                       | Atomic Snapshot                          |                      |                     |   |
+|                       | StateController.swap()                   |                   Success?               Error |
+|                       v                                          |                      |                     |   |
+|  +-----------------------------------------+                     |            [Update BoardState]             |   |
+|  | Active BoardState:                      |                     |            [Clear Stale Dot]               |   |
+|  | - Station & Destination                 |                     |            [Replay Flash WAL]              |   |
+|  | - Services 1..3 (Time, Dest, Platform)  |                     |                      |                     |   |
+|  | - Calling points text                   |                     |                      v                     |   |
+|  | - Stale dot flag (True/False)           |                     |            [Loop to next cycle]            |   |
+|  +-----------------------------------------+                     |                                            |   |
+|                                                                  |       +------------------------------------+   |
+|                                                                  |       | Non-Fatal Runtime Error Handling       |
+|                                                                  |       |                                        |
+|                                                                  |       v                                        v
+|                                                                  |  [429 Rate Limit]                    [API 5xx/404/DNS]
+|                                                                  |  - Read Retry-After                  - Keep old departures
+|                                                                  |  - Sleep retry_after s               - Keep clock ticking
+|                                                                  |  - NO REBOOT                         - Set Stale Dot = True
+|                                                                  |  - NO UI INTERRUPTION                - Retry in 120s
+|                                                                  |       |                              - NO REBOOT
+|                                                                  |       +-------------------+--------------------+
+|                                                                  |                           |
+|                                                                  |                           v
+|                                                                  |                 [Loop to next cycle]
+|                                                                  |
++------------------------------------------------------------------|------------------------------------------------+
+                                                                   v
+                                               [Stage 6: Graceful Shutdown & Reset]
+                                               - Flush crash log to flash WAL
+                                               - Arm hardware watchdog
+                                               - machine.reset() (reboots in 1.2s)
+```
+
+---
+
+## Stage-by-Stage Feature Breakdown
+
+### Stage 1: Cold Boot & Configuration Discovery
+
+When power is applied to the Pico 2 W, `main.main()` executes on **Core 0**:
 
 | Feature | Where | What it does |
 | :--- | :--- | :--- |
 | **Config Loader & Validation** | `src/config.py` | Reads `config.json`, validates types and value bounds. If missing or corrupt, branches to **Stage 2: Setup Portal**. |
 | **Baked-in Build Tokens** | `src/baked.py` | Allows pre-embedding `RTT_TOKEN` or `OTEL_HEADERS` into firmware so devices can be gifted without manual credential entry. |
 | **Flash Write-Ahead Log (WAL)** | `src/wal.py` | Mounts flash filesystem, auto-purges corrupted/orphaned `.tmp` files, and prepares `wal.log` for persistent logging. |
-| **Observability Initialization** | `src/otel.py` | Configures the OpenTelemetry client, creates a unique boot Run ID, and logs startup memory capacity. |
+| **Observability Initialization** | `src/otel.py` | Configures OpenTelemetry exporter, creates a unique boot Run ID, and records startup memory capacity. |
 
 ---
 
-## Stage 2: Provisioning & Captive Portal (`setup`)
+### Stage 2: Provisioning & Captive Portal (`setup`)
 
 If `config.json` is missing or unreadable, the board enters configuration mode:
 
@@ -70,7 +126,7 @@ If `config.json` is missing or unreadable, the board enters configuration mode:
 
 ---
 
-## Stage 3: Network Connection & Time Synchronization
+### Stage 3: Network Connection & Time Synchronization
 
 Once valid configuration is loaded, `main.run()` establishes network connectivity:
 
@@ -83,7 +139,7 @@ Once valid configuration is loaded, `main.run()` establishes network connectivit
 
 ---
 
-## Stage 4: Initial Departure Fetch & Fallback Safety
+### Stage 4: Initial Departure Fetch & Fallback Safety
 
 Before launching the display render engine, the system fetches the first set of live train departures:
 
@@ -95,10 +151,11 @@ Before launching the display render engine, the system fetches the first set of 
 
 ---
 
-## Stage 5: Dual-Core Display Render Engine (Core 1)
+### Stage 5: The Running State (Dual-Core Engine & Non-Fatal Recovery)
 
-`main.run()` spawns a dedicated high-priority render thread on **Core 1** (`_render_thread`):
+`main.run()` orchestrates the steady-state execution across both CPU cores:
 
+#### Core 1: Dedicated 60 FPS Render Engine
 | Feature | Where | What it does |
 | :--- | :--- | :--- |
 | **Dual-Core State Isolation** | `src/state.py` | Uses atomic snapshot swapping (`StateController`) so Core 1 draws immutable copies of board data without lock contention with Core 0. |
@@ -108,61 +165,26 @@ Before launching the display render engine, the system fetches the first set of 
 | **Smooth Text Scrolling** | `src/widgets.py` | Scrolls long calling-point lists using precise microsecond clock offsets rather than frame-step increments for buttery-smooth motion. |
 | **Authentic Rail Typography** | `src/fonts.py` | Draws departures using a faithful dot-matrix typeface with destination, scheduled time, expected time, platform badges, and ticking seconds indicator. |
 
----
-
-## Stage 6: Steady-State Polling & Token Management (Core 0)
-
-While Core 1 renders at 60 Hz, Core 0 runs the scheduled background update loop:
-
+#### Core 0: Scheduled Polling & Runtime Recovery
 | Feature | Where | What it does |
 | :--- | :--- | :--- |
 | **Request Budgeting (120s Pace)** | `src/main.py` | Polls Realtime Trains every 120 seconds (32 requests/hour), staying well inside the 100 req/hr and 1,000 req/day API rate limits. |
 | **Dynamic Calling Points** | `src/services/rtt.py` | Detects when the next departing train changes and automatically fetches its full calling points. |
 | **401 Token Auto-Renewal** | `src/services/rtt.py` | Automatically exchanges expired OAuth/access tokens in <1 second without interrupting display output. |
+| **429 Rate Limit Backoff** | `src/main.py` | Automatically backs off for `error.retry_after` seconds without rebooting or spamming the server. |
+| **API Outage Resilience (5xx/404/DNS)** | `src/main.py` | If Realtime Trains is down or DNS fails while Wi-Fi is connected, the board **does not reboot**. The clock keeps ticking, the last valid departures stay visible, and the **1-pixel Stale Dot** illuminates. |
 | **Persistent WAL Replay** | `src/otel.py` | Replays any offline back-buffered logs from flash memory (`wal.log`) to Grafana Cloud Loki upon reconnection. |
 | **Heap Memory Monitoring** | `src/main.py` | Tracks free/allocated heap memory (typically ~22% utilized, ~356 KB free) and triggers proactive garbage collection on Core 0 during idle polling windows. |
 
 ---
 
-## Stage 7: Self-Healing & Error Handling
+### Stage 6: Graceful Shutdown & Hardware Reset
 
-When network, API, or hardware faults occur, the error handling pipeline routes them intelligently:
-
-```
-                            Departure Update Failed
-                                       |
-             +-------------------------+-------------------------+
-             |                                                   |
-     RateLimitError (429)                               Other Exception
-             |                                                   |
-  Wait error.retry_after (e.g. 120s)              +--------------+--------------+
-      (NO REBOOT)                                 |                             |
-                                          Socket/Radio Error?            API Server Error?
-                                     (EHOSTUNREACH, ETIMEDOUT,         (500, 502, 503, 404,
-                                      isconnected() == False)           DNS lookup failure)
-                                                  |                             |
-                                             REBOOT NOW                 Wi-Fi is healthy!
-                                          (machine.reset())             Mark board stale,
-                                                                       keep clock ticking,
-                                                                       wait update_interval
-                                                                             (120s)
-                                                                           (NO REBOOT)
-```
+When an unrecoverable radio error occurs (such as the CYW43 Wi-Fi chip locking up with `STAT_CONNECTING`, `EHOSTUNREACH`, or persistent socket timeouts):
 
 | Feature | Where | What it does |
 | :--- | :--- | :--- |
-| **429 Rate Limit Backoff** | `src/main.py` | Backs off for `retry_after` seconds without rebooting or spamming the server. |
-| **API Outage Resilience (5xx/404/DNS)** | `src/main.py` | If Realtime Trains is down or DNS fails while Wi-Fi is connected, the board **does not reboot**. The clock keeps ticking, the last valid departures stay visible, and the **1-pixel Stale Dot** illuminates. |
-| **Fast Hardware Reset on Radio Wedge** | `src/main.py` | When the CYW43 Wi-Fi chip locks up (`STAT_CONNECTING` / `EHOSTUNREACH` / socket timeout), the device raises `_RadioIsGone` and reboots immediately. The Pico resets and re-associates in **1.2 seconds**, cutting recovery time from 30–45 minutes down to ~10 seconds. |
-
----
-
-## Stage 8: Graceful Shutdown & Crash Watchdog
-
-When a reboot is required (either from a wedged radio or unhandled exception):
-
-| Feature | Where | What it does |
-| :--- | :--- | :--- |
+| **Fast Radio Loss Detection** | `src/main.py` | Detects link loss or hardware socket failure and raises `_RadioIsGone` immediately, bypassing futile software reconnects. |
 | **Shutdown Watchdog** | `src/main._arm_shutdown_watchdog` | Arms a hardware watchdog timer (`machine.WDT`) to guarantee that the chip resets even if network socket cleanup hangs. |
 | **Flash WAL Flush** | `src/wal.py`, `src/otel.py` | Writes any unsent log entries to flash memory so crash reasons and stack traces survive the reboot. |
-| **Hardware Reset** | `src/main.main` `finally` | Calls `machine.reset()` for a clean hardware power-cycle of the RP2350 CPU and CYW43 radio registers. |
+| **Fast 1.2s Hardware Reset** | `src/main.main` `finally` | Calls `machine.reset()`, power-cycling the RP2350 CPU and CYW43 radio registers and returning the board to full operation in **~10 seconds**. |
