@@ -323,42 +323,9 @@ class RequestsAtStartupTest(unittest.TestCase):
 
     self.assertEqual(1, self.slept, 'the backoff, not the whole interval')
 
-  def test_reboots_immediately_when_wifi_reconnect_fails(self):
-    # If a socket/network error occurs and reconnecting returns None (dead CYW43),
-    # it reboots immediately without waiting for a timer.
-    connect_calls = [0]
-
-    def mock_connect(*a, **k):
-      connect_calls[0] += 1
-      if connect_calls[0] == 1:
-        return types.SimpleNamespace(isconnected=lambda: True)
-      return None
-
-    main._connect = mock_connect
-
-    class _TimesOut:
-
-      def __init__(self, *args, **kwargs):
-        pass
-
-      def update(self):
-        raise OSError(113, 'host unreachable')
-
-    main.trains = types.SimpleNamespace(
-        DepartureUpdater=_TimesOut, retry_wait=lambda e, interval: 1
-    )
-
-    with self.assertRaises(main._RadioIsGone):
-      main.run(main.config_module.load(_VALID_CONFIG))
-
-  def test_reconnects_wifi_and_retries_on_socket_timeout(self):
-    # An explicit socket timeout (e.g. ETIMEDOUT) cycles the Wi-Fi immediately
-    # and retries in 2 seconds.
-    reconnected = []
-    main._connect = lambda *a, **k: reconnected.append(True) or types.SimpleNamespace(
-        isconnected=lambda: True
-    )
-
+  def test_reboots_immediately_on_socket_timeout(self):
+    # An explicit socket timeout (e.g. ETIMEDOUT / EHOSTUNREACH) raises _RadioIsGone
+    # immediately to power-cycle the wedged radio hardware.
     failed = [0]
 
     class _TimesOut:
@@ -370,16 +337,35 @@ class RequestsAtStartupTest(unittest.TestCase):
         failed[0] += 1
         if failed[0] == 2:
           raise OSError(110, 'connection timed out')
-        if failed[0] > 2:
-          raise _Stop()
 
     main.trains = types.SimpleNamespace(
         DepartureUpdater=_TimesOut, retry_wait=lambda e, interval: 1
     )
 
-    self._run()
-    # 1 initial connect at boot + 1 cycle on socket timeout
-    self.assertEqual(2, len(reconnected))
+    with self.assertRaises(main._RadioIsGone):
+      self._run()
+
+  def test_reboots_immediately_when_wifi_drops(self):
+    # When wlan.isconnected() becomes False, raises _RadioIsGone immediately.
+    is_connected = [True]
+    main._connect = lambda *a, **k: types.SimpleNamespace(
+        isconnected=lambda: is_connected[0]
+    )
+
+    class _Updater:
+
+      def __init__(self, *args, **kwargs):
+        pass
+
+      def update(self):
+        is_connected[0] = False
+
+    main.trains = types.SimpleNamespace(
+        DepartureUpdater=_Updater, retry_wait=lambda e, interval: 1
+    )
+
+    with self.assertRaises(main._RadioIsGone):
+      self._run()
 
   def test_api_server_error_does_not_reconnect_or_reboot(self):
     # An API 500 error does not cycle Wi-Fi or reboot the board.

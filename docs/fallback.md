@@ -107,18 +107,16 @@ The device differentiates between three distinct error scenarios:
                                            (EHOSTUNREACH, ETIMEDOUT,         (500, 502, 503, 404,
                                             isconnected() == False)           bad JSON format)
                                                         |                             |
-                                              Attempt 1 Reconnect              Wi-Fi is healthy!
-                                                        |                       Mark board stale,
-                                              +---------+---------+            keep clock ticking,
-                                              |                   |            wait update_interval
-                                           Success             Failed                (120s)
-                                              |                   |                (NO REBOOT)
-                                           Retry in          REBOOT NOW
-                                             2s            (machine.reset())
+                                                   REBOOT NOW                 Wi-Fi is healthy!
+                                                (machine.reset())             Mark board stale,
+                                                                             keep clock ticking,
+                                                                             wait update_interval
+                                                                                   (120s)
+                                                                                 (NO REBOOT)
 ```
 
 ### 1. Unrecoverable Wi-Fi / Radio Error -> Immediate Reboot
-When the CYW43 Wi-Fi driver wedges (`STAT_CONNECTING` / `EHOSTUNREACH`), software reconnection calls fail 100% of the time. The device attempts one fast reconnect; if that fails, it immediately triggers `machine.reset()`. The Pico 2 reboots and re-associates with Wi-Fi within **1.2 seconds**, bringing fresh departures back immediately rather than leaving the display stale for 30 minutes.
+When the CYW43 Wi-Fi driver wedges (`STAT_CONNECTING` / `EHOSTUNREACH`), software reconnection calls fail 100% of the time. Rather than wasting time attempting reconnects, the device immediately triggers `machine.reset()`. The Pico 2 reboots and re-associates with Wi-Fi within **1.2 seconds**, bringing fresh departures back immediately rather than leaving the display stale for 30 minutes.
 
 ### 2. API 429 Rate Limit -> Backoff & Respect Server
 When Realtime Trains responds with HTTP 429 (`RateLimitError`), the device sleeps for `max(update_interval, error.retry_after)` seconds without rebooting, respecting the API budget.

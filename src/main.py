@@ -261,18 +261,14 @@ def run(config: config_module.Config):
       for _ in range(wait):
         time.sleep(1)
 
-      # The whole chain, rebuilt from wherever it broke:
+      # If the link or radio is down, reboot immediately to reset hardware:
       if wlan is None or not wlan.isconnected():
-        logging.log('Wi-Fi disconnected, attempting reconnect...')
-        wlan = _connect(config.wifi.ssid, config.wifi.password)
-        if wlan is None or not wlan.isconnected():
-          logging.log(
-              'Wi-Fi radio is unresponsive, rebooting immediately to reset '
-              'hardware...'
-          )
-          raise _RadioIsGone()
+        logging.log(
+            'Wi-Fi connection lost, rebooting immediately to reset radio...'
+        )
+        raise _RadioIsGone()
 
-      if wlan is not None and not clock_set:
+      if not clock_set:
         clock_set = _configure_time()
 
       try:
@@ -291,12 +287,12 @@ def run(config: config_module.Config):
           wait = max(update_interval, e.retry_after)
           logging.log('Rate limited (429), backing off for {}s...', wait)
         elif is_socket_error or (wlan is not None and not wlan.isconnected()):
-          logging.log('Network error ({}), attempting Wi-Fi reconnect...', e)
-          wlan = _connect(config.wifi.ssid, config.wifi.password)
-          if wlan is None or not wlan.isconnected():
-            logging.log('Wi-Fi radio is unresponsive, rebooting immediately...')
-            raise _RadioIsGone()
-          wait = 2
+          logging.log(
+              'Network/socket error ({}), rebooting immediately to reset '
+              'radio...',
+              e,
+          )
+          raise _RadioIsGone()
         else:
           # Remote API server error (500, 502, 503, 404, bad format).
           # Wi-Fi is fine; the API server is having issues.
