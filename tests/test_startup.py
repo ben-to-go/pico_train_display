@@ -396,6 +396,36 @@ class RequestsAtStartupTest(unittest.TestCase):
     # Only the initial connect at boot, no reconnects on API 500
     self.assertEqual(1, len(reconnected))
 
+  def test_dns_resolution_failure_does_not_reboot(self):
+    # A DNS lookup failure (e.g. CNAME deleted / NXDOMAIN / errno -2)
+    # does NOT reboot the device. Wi-Fi remains connected, board marks stale.
+    reconnected = []
+    main._connect = lambda *a, **k: reconnected.append(True) or types.SimpleNamespace(
+        isconnected=lambda: True
+    )
+
+    failed = [0]
+
+    class _DnsFails:
+
+      def __init__(self, *args, **kwargs):
+        pass
+
+      def update(self):
+        failed[0] += 1
+        if failed[0] == 2:
+          raise OSError(-2, 'Name or service not known')
+        if failed[0] > 2:
+          raise _Stop()
+
+    main.trains = types.SimpleNamespace(
+        DepartureUpdater=_DnsFails, retry_wait=lambda e, interval: 120
+    )
+
+    self._run()
+    # Device did not reboot or cycle connection; handled as remote API outage
+    self.assertEqual(1, len(reconnected))
+
 
 class WifiPowerSavingTest(unittest.TestCase):
   """That the radio is told not to doze, and that saying so is not required.
