@@ -186,6 +186,37 @@ class SetupIsOfferedTest(unittest.TestCase):
 
     self.assertEqual([True], self.setup_ran)
 
+  def test_runs_on_baked_credentials_when_no_config_json(self):
+    module = types.ModuleType('baked')
+    module.RTT_TOKEN = 'baked_rtt_tok'
+    module.OTEL_HEADERS = ''
+    module.KNOWN_WIFI = '[{"ssid": "BakedNet", "password": "pass"}]'
+    self.addCleanup(sys.modules.pop, 'baked', None)
+    sys.modules['baked'] = module
+
+    ran_with = []
+    main.run = ran_with.append
+    main.main()
+
+    self.assertEqual([], self.setup_ran)
+    self.assertEqual(1, len(ran_with))
+    self.assertEqual((('BakedNet', 'pass'),), ran_with[0].wifi.networks)
+    self.assertEqual('baked_rtt_tok', ran_with[0].rtt.token)
+
+  def test_setup_when_no_config_json_and_no_baked_wifi(self):
+    module = types.ModuleType('baked')
+    module.RTT_TOKEN = 'baked_rtt_tok'
+    module.OTEL_HEADERS = ''
+    module.KNOWN_WIFI = ''
+    self.addCleanup(sys.modules.pop, 'baked', None)
+    sys.modules['baked'] = module
+
+    main.run = lambda config: self.fail('should not have run')
+    main.main()
+
+    self.assertEqual([True], self.setup_ran)
+
+
 
 if __name__ == '__main__':
   unittest.main()

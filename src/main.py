@@ -109,7 +109,11 @@ def _arm_shutdown_watchdog():
     logging.exception(e)
 
 
-def _connect(ssid: str, password: str, screen: display.Display | None = None):
+def _connect(
+    networks: tuple[tuple[str, str], ...] | list[tuple[str, str]] | str,
+    password: str = '',
+    screen: display.Display | None = None,
+):
   """Connects to station Wi-Fi with animated progress rendering on screen."""
   widget = (
       widgets.MessageWidget(screen, _WIFI_CONNECT, fonts.DEFAULT_FONT)
@@ -122,13 +126,18 @@ def _connect(ssid: str, password: str, screen: display.Display | None = None):
       widget.render('{}{}'.format(_WIFI_CONNECT, '.' * (i % 4)))
       screen.flush()
 
-  return wifi.connect(
-      ssid,
-      password,
+  if isinstance(networks, str):
+    network_list = ((networks, password),) if networks else ()
+  else:
+    network_list = networks
+
+  return wifi.connect_known(
+      network_list,
       timeout=_CONNECT_TIMEOUT,
       on_progress=_progress,
       network_module=network,
   )
+
 
 
 def _scan_networks() -> list[str]:
@@ -194,7 +203,7 @@ def run(config: config_module.Config):
     _log_memory()
     gc.threshold(gc.mem_free() // 4 + gc.mem_alloc())
 
-    wlan = _connect(config.wifi.ssid, config.wifi.password, screen=screen)
+    wlan = _connect(config.wifi.networks, screen=screen)
     if wlan is None:
       # A wrong password and a network that has moved look the same from here,
       # and both are fixed by the same screen. Asking is the only thing the
@@ -367,19 +376,48 @@ def _run_setup():
 
 def main():
   """Loads config, configures logging and OpenTelemetry, and launches run()."""
+  config = None
   try:
     with open('config.json', 'r') as f:
       config = config_module.load(json.load(f))
   except (OSError, ValueError, TypeError) as e:
-    # No config, or one this firmware cannot read: a setting that has since
-    # been removed, a value out of range, a file that got truncated. They all
-    # leave nothing to run on, so ask for it again. Resetting instead just
-    # loops, because the setup screen only appears when there is no config and
-    # an unreadable one still counts as a config.
-    logging.log('No usable config, starting setup.')
-    logging.exception(e)
-    _run_setup()
-    return
+    try:
+      fallback_cfg = config_module.load({})
+      if fallback_cfg.wifi.networks and fallback_cfg.rtt.token:
+        logging.log('Creating initial config.json from baked credentials.')
+        with open('config.json', 'w') as f:
+          json.dump({
+              'station': fallback_cfg.station,
+              'destination': fallback_cfg.destination,
+              'wifi': {
+                  'networks': [
+                      {'ssid': s, 'password': p}
+                      for s, p in fallback_cfg.wifi.networks
+                  ]
+              },
+              'rtt': {
+                  'endpoint': fallback_cfg.rtt.endpoint,
+                  'token': fallback_cfg.rtt.token,
+                  'update_interval': fallback_cfg.rtt.update_interval,
+              },
+              'display': {
+                  'refresh': fallback_cfg.display.refresh,
+                  'flip': fallback_cfg.display.flip,
+                  'scroll_speed': fallback_cfg.display.scroll_speed,
+              },
+              'debug': {'log': fallback_cfg.debug.log},
+          }, f)
+        config = fallback_cfg
+    except Exception:
+      pass
+
+    if config is None:
+      logging.log('No usable config, starting setup.')
+      logging.exception(e)
+      _run_setup()
+      return
+
+
 
   if config.debug.log:
     logging.set_logging_file('debug.txt')

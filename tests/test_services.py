@@ -42,5 +42,59 @@ class ServicesWifiTest(unittest.TestCase):
     self.assertEqual('STAT_WRONG_PASSWORD', wifi.wifi_status_desc(-3))
 
 
+class ConnectKnownTest(unittest.TestCase):
+
+  def setUp(self):
+    self.addCleanup(setattr, wifi, 'scan_networks', wifi.scan_networks)
+    self.addCleanup(setattr, wifi, 'connect', wifi.connect)
+
+  def test_connects_to_first_matching_scanned_network(self):
+    wifi.scan_networks = lambda *a, **k: ['OtherNet', 'WorkNet', 'HomeNet']
+    wifi.connect = (
+        lambda ssid, password, *a, **k: (
+            'wlan_obj' if ssid == 'WorkNet' else None
+        )
+    )
+
+    res = wifi.connect_known((('HomeNet', 'h1'), ('WorkNet', 'w1')))
+    self.assertEqual('wlan_obj', res)
+
+  def test_tries_subsequent_matching_networks_if_first_fails(self):
+    attempts = []
+    wifi.scan_networks = lambda *a, **k: ['WorkNet', 'HomeNet']
+
+    def fake_connect(ssid, password, *a, **k):
+      attempts.append((ssid, password))
+      if ssid == 'HomeNet':
+        return 'wlan_obj'
+      return None
+
+    wifi.connect = fake_connect
+
+    res = wifi.connect_known((('HomeNet', 'h1'), ('WorkNet', 'w1')))
+    self.assertEqual('wlan_obj', res)
+    self.assertEqual([('WorkNet', 'w1'), ('HomeNet', 'h1')], attempts)
+
+  def test_returns_none_when_no_known_networks_found_in_scan(self):
+    wifi.scan_networks = lambda *a, **k: ['Unrelated1', 'Unrelated2']
+    res = wifi.connect_known((('HomeNet', 'h1'), ('WorkNet', 'w1')))
+    self.assertIsNone(res)
+
+  def test_falls_back_to_direct_connect_when_scan_empty(self):
+    attempts = []
+    wifi.scan_networks = lambda *a, **k: []
+
+    def fake_connect(ssid, password, *a, **k):
+      attempts.append((ssid, password))
+      return 'wlan_obj'
+
+    wifi.connect = fake_connect
+
+    res = wifi.connect_known((('HomeNet', 'h1'), ('WorkNet', 'w1')))
+    self.assertEqual('wlan_obj', res)
+    self.assertEqual([('HomeNet', 'h1')], attempts)
+
+
 if __name__ == '__main__':
   unittest.main()
+

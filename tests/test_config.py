@@ -183,3 +183,58 @@ class UnreadableConfigTest(unittest.TestCase):
   def test_the_config_we_ship_still_loads(self):
     # The other direction: none of the above should catch a good one.
     config.load(self._valid())
+
+
+class KnownWifiConfigTest(unittest.TestCase):
+  """That multiple known networks and baked-in Wi-Fi credentials parse correctly."""
+
+  def setUp(self):
+    self.addCleanup(sys.modules.pop, 'baked', None)
+    self.addCleanup(os.environ.pop, 'KNOWN_WIFI', None)
+
+  def _bake(self, **values):
+    module = types.ModuleType('baked')
+    for key, value in values.items():
+      setattr(module, key, value)
+    sys.modules['baked'] = module
+
+  def test_single_ssid_and_password(self):
+    wifi_cfg = config.WifiConfig(ssid='HomeNet', password='pass')
+    self.assertEqual((('HomeNet', 'pass'),), wifi_cfg.networks)
+    self.assertEqual('HomeNet', wifi_cfg.ssid)
+    self.assertEqual('pass', wifi_cfg.password)
+
+  def test_multiple_networks_in_config_json(self):
+    cfg = {
+        'station': 'SKM',
+        'destination': 'MYB',
+        'wifi': {
+            'networks': [
+                {'ssid': 'Primary', 'password': 'p1'},
+                {'ssid': 'Secondary', 'password': 'p2'},
+            ]
+        },
+        'rtt': {'endpoint': 'https://data.rtt.io', 'token': 't', 'update_interval': 120},
+        'display': {'refresh': 60, 'flip': False, 'scroll_speed': 15},
+    }
+    loaded = config.load(cfg)
+    self.assertEqual((('Primary', 'p1'), ('Secondary', 'p2')), loaded.wifi.networks)
+    self.assertEqual('Primary', loaded.wifi.ssid)
+    self.assertEqual('p1', loaded.wifi.password)
+
+  def test_baked_known_wifi_comma_separated(self):
+    self._bake(KNOWN_WIFI='Home:sec1,Office:sec2')
+    wifi_cfg = config.WifiConfig()
+    self.assertEqual((('Home', 'sec1'), ('Office', 'sec2')), wifi_cfg.networks)
+    self.assertEqual('Home', wifi_cfg.ssid)
+
+  def test_env_known_wifi_json_format(self):
+    os.environ['KNOWN_WIFI'] = '[{"ssid": "JsonNet", "password": "jpw"}]'
+    wifi_cfg = config.WifiConfig()
+    self.assertEqual((('JsonNet', 'jpw'),), wifi_cfg.networks)
+
+  def test_config_overrides_baked_for_same_ssid(self):
+    self._bake(KNOWN_WIFI='Home:oldpass,Office:workpass')
+    wifi_cfg = config.WifiConfig(ssid='Home', password='newpass')
+    self.assertEqual((('Home', 'newpass'), ('Office', 'workpass')), wifi_cfg.networks)
+
