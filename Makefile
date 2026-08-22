@@ -48,7 +48,7 @@ firmware: baked | $(MICROPYTHON_DIR)
 	@cp $(RP2_BUILD)/firmware.uf2 $(FIRMWARE)
 	@echo 'Flash this: $(FIRMWARE)'
 
-PICO ?= /Volumes/RPI-RP2
+PICO ?= /Volumes/RP2350
 FLASH_NUKE = build/flash_nuke.uf2
 
 # Copies the firmware to a connected Pico in BOOTSEL mode.
