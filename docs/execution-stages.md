@@ -6,106 +6,59 @@ This document explains what happens at every stage of the display's execution li
 
 ## 🗺️ Complete Execution Lifecycle & Architecture Flowchart
 
-The following flowchart maps all execution paths, decision conditionals, and hardware reset loops:
+The following interactive diagram maps all lifecycle stages, decision points, cross-core concurrency, and hardware recovery loops:
 
-```
-                                         +-----------------------+
-                                         | [POWER ON / COLD BOOT]| <---------------------------+
-                                         +-----------+-----------+                             |
-                                                     |                                         |
-                                                     v                                         |
-                                     +-------------------------------+                         |
-                                     | STAGE 1: BOOT & CONFIG LOADER |                         |
-                                     | - Read & validate config.json |                         |
-                                     | - Purge corrupted .tmp files  |                         |
-                                     | - Init Flash WAL (wal.log)    |                         |
-                                     | - Create boot Run ID (otel)   |                         |
-                                     +---------------+---------------+                         |
-                                                     |                                         |
-                                        Config Valid?|                                         |
-                                +--------------------+--------------------+                    |
-                                |                                         |                    |
-                             (No / Corrupt)                            (Yes)                   |
-                                |                                         |                    |
-                                v                                         v                    |
-             +--------------------------------------+   +-----------------------------------+  |
-   +-------> | STAGE 2: CAPTIVE SETUP PORTAL (AP)   |   | STAGE 3: WI-FI & TIME SYNC        |  |
-   |         | - Show AP SSID & URL on OLED         |   | - Join Wi-Fi (15s timeout)        |  |
-   |         | - Scan & rank SSIDs by RSSI          |   | - Lock power mode (PM_NONE)       |  |
-   |         | - Serve web portal (192.168.4.1)     |   | - NTP sync to UTC                 |  |
-   |         | - Save config.json & machine.reset() |   | - Calculate UK BST clock offsets  |  |
-   |         +------------------+-------------------+   +-----------------+-----------------+  |
-   |                            |                                         |                    |
-   | (Save & Reset)             |                                         |                    |
-   |                            +-----------------------------------------|------------------->+
-   |                                                      Wi-Fi Connected?|                    |
-   |                                              +-----------------------+                    |
-   |                                              |                       |                    |
-   |                                           (No: 15s timeout)       (Yes)                   |
-   |                                              |                       |                    |
-   +----------------------------------------------+                       v                    |
-                                                        +-----------------------------------+  |
-                                                        | STAGE 4: INITIAL DEPARTURE FETCH  |  |
-                                                        | - Query Realtime Trains API       |  |
-                                                        | - Success? Load live departures   |  |
-                                                        | - Offline? Load baked-in snapshot |  |
-                                                        | - Ship startup boot telemetry     |  |
-                                                        +-----------------+-----------------+  |
-                                                                          |                    |
-                                                                          v                    |
-+-------------------------------------------------------------------------------------------+  |
-|                         STAGE 5: RUNNING STATE (DUAL-CORE ARCHITECTURE)                   |  |
-|                                                                                           |  |
-|  CORE 1: 60 FPS RENDER ENGINE                             CORE 0: POLLING & RECOVERY      |  |
-|  ----------------------------                             --------------------------      |  |
-|                                                                         |                 |  |
-|  +-----------------------------------------+                   [Sleep update_interval]    |  |
-|  | Loop: every 16.7ms (60 Hz timer)        |                            |                 |  |
-|  | 1. Read UK time (RTC + BST offset)      |                   [Check Wi-Fi Link]         |  |
-|  | 2. Fetch latest BoardState snapshot     |                            |                 |  |
-|  | 3. Render departures & calling points   |           +----------------+----------------+|  |
-|  | 4. Update live clock & blinking seconds |           |                                 ||  |
-|  | 5. Find dirty row span                  |      Link Lost?                         Link OK  |
-|  | 6. Partial flush to SSD1322 parallel bus|           |                                 ||  |
-|  |    (1,152B vs 8,192B full frame)        |    (Raise _RadioIsGone)            [Fetch]  ||  |
-|  +-----------------------------------------+           |                                 ||  |
-|                       ^                                |                        +--------++  |
-|                       | Atomic Snapshot                |                        |        |   |
-|                       | StateController.swap()         |                     Success?  Error |
-|                       v                                |                        |        |   |
-|  +-----------------------------------------+           |                 [Update Board]  |   |
-|  | Active BoardState:                      |           |                 [Clear Stale]   |   |
-|  | - Station & Destination                 |           |                 [Flush WAL]     |   |
-|  | - Services 1..3 (Time, Dest, Platform)  |           |                        |        |   |
-|  | - Calling points text                   |           |                        v        |   |
-|  | - Stale dot flag (True/False)           |           |              [Loop to next]     |   |
-|  +-----------------------------------------+           |                                 |   |
-|                                                        |     +---------------------------+   |
-|                                                        |     | Non-Fatal Runtime Errors      |
-|                                                        |     v                               v
-|                                                        |  [429 Rate Limit]      [API 5xx/404/DNS]
-|                                                        |  - Sleep retry_after   - Set Stale Dot
-|                                                        |  - NO REBOOT           - Keep old board
-|                                                        |  - NO UI BLIP          - Keep clock
-|                                                        |     |                  - Retry in 120s
-|                                                        |     |                  - NO REBOOT  |
-|                                                        |     +--------+--------------+       |
-|                                                        |              |                      |
-|                                                        |              v                      |
-|                                                        |     [Loop to next cycle]            |
-|                                                        |                                     |
-+--------------------------------------------------------|-------------------------------------+
-                                                         |
-                                                         | (Fatal Socket/Radio Wedge: EHOSTUNREACH, ETIMEDOUT)
-                                                         v
-                                     +---------------------------------------+
-                                     | STAGE 6: GRACEFUL SHUTDOWN & RESET    |
-                                     | - Flush crash log to flash WAL        |
-                                     | - Arm hardware watchdog (machine.WDT) |
-                                     | - machine.reset() (reboots in 1.2s)   |
-                                     +-------------------+-------------------+
-                                                         |
-                                                         +------------------------------------>+
+```mermaid
+flowchart TD
+    Boot([Power On / Cold Boot]) --> S1["<b>Stage 1: Boot & Config Loader</b><br/>• Read & validate config.json<br/>• Purge corrupted .tmp files<br/>• Init Flash WAL (wal.log)<br/>• Create boot Run ID (otel)"]
+
+    S1 --> DecisionConfig{Config Valid?}
+    
+    DecisionConfig -->|No / Corrupted| S2["<b>Stage 2: Setup Portal (AP)</b><br/>• Broadcast SSID 'Pico Train Display'<br/>• Serve captive portal (192.168.4.1)<br/>• Save config.json & machine.reset()"]
+    S2 -->|Save & Reset| Boot
+
+    DecisionConfig -->|Yes| S3["<b>Stage 3: Wi-Fi & NTP Sync</b><br/>• Join Wi-Fi (15s timeout)<br/>• Lock power mode (PM_NONE)<br/>• NTP sync & UK BST clock offsets"]
+
+    S3 --> DecisionWifi{Wi-Fi Joined?}
+    DecisionWifi -->|No: Timeout 15s| S2
+    DecisionWifi -->|Yes| S4["<b>Stage 4: Initial Board Fetch</b><br/>• Query Realtime Trains API<br/>• If offline: Load baked-in snapshot<br/>• Ship boot telemetry to Loki"]
+
+    S4 --> Stage5
+
+    subgraph Stage5 ["Stage 5: Running State (Dual-Core Architecture)"]
+        direction TB
+        
+        subgraph Core1 ["Core 1: 60 FPS Render Engine"]
+            RenderLoop["<b>Render Loop (16.7ms)</b><br/>1. Read UK time (RTC + BST)<br/>2. Render departures & calling points<br/>3. Partial flush to SSD1322 (1,152B)<br/><i>Zero-allocation, no GC jitter</i>"]
+        end
+
+        subgraph Core0 ["Core 0: Polling, Telemetry & Recovery"]
+            PollWait["Sleep update_interval (120s)"] --> CheckLink{Wi-Fi Connected?}
+            
+            CheckLink -->|Yes| FetchAPI["Fetch Live Departures"]
+            
+            FetchAPI --> DecisionAPI{API Result}
+            DecisionAPI -->|Success 200| UpdateBoard["Update BoardState<br/>Clear Stale Dot<br/>Flush WAL to Loki"]
+            UpdateBoard --> PollWait
+
+            DecisionAPI -->|Rate Limit 429| Backoff["Sleep retry_after seconds<br/><b>(NO REBOOT)</b>"]
+            Backoff --> PollWait
+
+            DecisionAPI -->|5xx / 404 / DNS| StaleHold["Keep last departures<br/>Keep clock ticking<br/>Set Stale Dot = ON<br/><b>(NO REBOOT)</b>"]
+            StaleHold --> PollWait
+        end
+
+        UpdateBoard -.->|Atomic Snapshot Swap| RenderLoop
+    end
+
+    CheckLink -->|No: Radio Loss| S6
+    DecisionAPI -->|Socket Timeout / EHOSTUNREACH| S6
+
+    subgraph S6 ["Stage 6: Graceful Shutdown & Hardware Reset"]
+        Shutdown["• Flush crash log to flash WAL<br/>• Arm hardware watchdog (WDT)<br/>• machine.reset() (reboots in 1.2s)"]
+    end
+
+    S6 -->|Hardware Reset| Boot
 ```
 
 ---
