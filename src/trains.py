@@ -58,25 +58,9 @@ _MAXRESPONSE_SIZE = 40 * 1024
 _TIME_WINDOW_MINS = 180
 
 
-class AuthError(ValueError):
-  """Raised when the API rejects our token.
-
-  Subclasses ValueError so that a bad token is retried by the caller rather
-  than taking down the device.
-  """
-
-
-class RateLimitError(ValueError):
-  """Raised when the API says we have asked too often.
-
-  Carries the seconds the API asked us to wait, because retrying straight
-  away is how a board that is over the limit stays over it.
-  """
-
-  def __init__(self, retry_after: int):
-    super().__init__('Rate limited, retry after {}s'.format(retry_after))
-    self.retry_after = retry_after
-
+from models import BoardSnapshot, Departure, Response, Station
+from net.errors import AuthError, RateLimitError
+from net.http import http_request
 
 # Long enough that a night-long outage costs a handful of requests, short
 # enough that the board is current again within half an hour of the API
@@ -123,292 +107,21 @@ def _to_epoch(timestamp: str) -> int:
   ))
 
 
-# TODO: Make this a dataclass when MicroPython supports it.
-class Response:
-
-  def __init__(self, status_code: int, headers: dict[str, str], content):
-    self._status_code = status_code
-    self._headers = headers
-    self._content = content
-
-  @property
-  def status_code(self):
-    return self._status_code
-
-  @property
-  def content(self):
-    return self._content
-
-  @property
-  def headers(self):
-    return self._headers
-
-  def __repr__(self) -> str:
-    return 'Response(status_code={}, headers={}, content={}'.format(
-        self.status_code, self.headers, self.content
-    )
+import services.rtt as rtt
+from services.rtt import (
+    fallback_calling_points,
+    fallback_departures,
+    lineup_url as _lineup_url,
+    parse_calling_points,
+    parse_departures,
+    to_epoch as _to_epoch,
+    to_hhmm as _to_hhmm,
+)
 
 
-def http_request(
-    url: str,
-    *,
-    method: str = 'GET',
-    body: str | bytes | None = None,
-    headers: dict[str, str] | None = None,
-    bearer_token: str | None = None,
-    timeout: int | None = None,
-    buffer: memoryview | None = None,
-    ssl_context: ssl.SSLContext | None = None,
-) -> Response:
-  """Send an HTTP request and return Response.
-
-  This is heavily influenced by urequests.get(), with a couple of modifications:
-    - Simplify code by not supporting sending params with GET
-    - Support passing a pre-allocated buffer for response body, to help
-      alleviate memory fragmentation.
-    - Fix for transient EINPROGRESS error thrown from connect when using
-      timeouts.
-  """
-  proto, _, host, path = url.split('/', 3)
-  redirect = None
-
-  if proto == 'http:':
-    port = 80
-  elif proto == 'https:':
-    port = 443
-  else:
-    raise ValueError('Unsupported protocol: ' + proto)
-
-  if ':' in host:
-    host, port = host.split(':', 1)
-    port = int(port)
-
-  addr = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)[0]
-
-  s = socket.socket(addr[0], socket.SOCK_STREAM, addr[2])
-
-  try:
-    try:
-      s.connect(addr[-1])
-    except OSError as e:
-      if e.errno not in _CONNECT_UNDERWAY:
-        raise
-
-    p = select.poll()
-    p.register(s, select.POLLOUT)
-    result = p.poll(timeout if timeout is not None else -1)
-    if not result:
-      raise OSError(errno.ETIMEDOUT, 'Timed out connecting to socket.')
-
-    if timeout is not None:
-      s.settimeout(timeout)
-
-    if proto == 'https:':
-      if ssl_context is not None:
-        s = ssl_context.wrap_socket(s, server_hostname=host)
-      else:
-        s = ssl.wrap_socket(s, server_hostname=host)
-
-    if body is not None and not isinstance(body, bytes):
-      body = body.encode('utf-8')
-
-    s.write('{} /{} HTTP/1.0\r\n'.format(method, path))
-    s.write('Host: {}\r\n'.format(host))
-    if bearer_token is not None:
-      s.write('Authorization: Bearer {}\r\n'.format(bearer_token))
-    for name, value in (headers or {}).items():
-      s.write('{}: {}\r\n'.format(name, value))
-    # Length rather than chunked, because the body is already a string in
-    # memory and a server that only speaks HTTP/1.0 would not take chunks.
-    if body is not None:
-      s.write('Content-Length: {}\r\n'.format(len(body)))
-    s.write('Connection: close\r\n\r\n')
-    if body is not None:
-      s.write(body)
-
-    http_status = s.readline().split(None, 2)
-    if len(http_status) < 2:
-      raise ValueError('HTTP error: bad status "{}"'.format(http_status))
-
-    status = int(http_status[1])
-
-    # Parse response headers.
-    response_headers = {}
-    while True:
-      header = s.readline()
-      if not header or header == b'\r\n':
-        break
-      if header.startswith(b'Location:') and not 200 <= status <= 299:
-        if status in [301, 302, 303, 307, 308]:
-          redirect = str(header[10:-2], 'utf-8')
-        else:
-          raise NotImplementedError('Redirect %d not yet supported!' % status)
-      else:
-        header = str(header, 'utf-8')
-        k, v = header.split(':', 1)
-        # Lowercased, because header names are case insensitive and the only
-        # thing that reads one wants to find it whatever the server sent.
-        response_headers[k.lower()] = v.strip()
-
-  except Exception:
-    # Always close socket on any exception
-    s.close()
-    raise
-
-  if redirect is not None:
-    s.close()
-    http_request(
-        redirect,
-        method=method,
-        body=body,
-        headers=headers,
-        bearer_token=bearer_token,
-        timeout=timeout,
-        buffer=buffer,
-        ssl_context=ssl_context,
-    )
-
-  try:
-    if buffer is not None:
-      content_length = int(response_headers.get('Content-Length', -1))
-      if content_length > -1 and len(buffer) < content_length:
-        raise ValueError(
-            'Content length > buffer! Content-length: {} Buffer {}'.format(
-                content_length, len(buffer)
-            )
-        )
-      else:
-        length = s.readinto(buffer)
-        content = buffer[:length]
-    else:
-      content = s.read()
-  finally:
-    s.close()
-
-  return Response(status, response_headers, content)
-
-
-# TODO: Make this a dataclass when MicroPython supports dataclasses
-class Departure:
-  """Class that encapsulates a train departure's data to be displayed."""
-
-  def __init__(
-      self,
-      destination: str,
-      departure_time: int,
-      actual_departure_time: int,
-      cancelled: bool,
-      identity: str = '',
-  ):
-    self._destination = destination
-    self._departure_time = departure_time
-    self._actual_departure_time = actual_departure_time
-    self._cancelled = cancelled
-    self._identity = identity
-
-  @property
-  def destination(self) -> str:
-    return self._destination
-
-  @property
-  def departure_time(self) -> int:
-    return self._departure_time
-
-  @property
-  def actual_departure_time(self) -> int:
-    return self._actual_departure_time
-
-  @property
-  def cancelled(self) -> bool:
-    return self._cancelled
-
-  @property
-  def identity(self) -> str:
-    """The service's API identity, used to look up its calling points."""
-    return self._identity
-
-  def __repr__(self) -> str:
-    return (
-        'Departure(destination="{}", departure_time={},'
-        'actual_departure_time={}, cancelled={})'
-    ).format(
-        self.destination,
-        self.departure_time,
-        self.actual_departure_time,
-        self.cancelled,
-    )
-
-  def __eq__(self, other: object) -> bool:
-    return (
-        isinstance(other, Departure)
-        and self.departure_time == other.departure_time
-        and self.actual_departure_time == other.actual_departure_time
-        and self.cancelled == other.cancelled
-        and self.destination == other.destination
-    )
-
-
-Station = collections.namedtuple('Station', ('name', 'departures'))
-
-
-def fallback_departures() -> Station:
-  """The board baked into the firmware, for when the API can't be reached.
-
-  Not filtered by min_departure_time: these departures are a fixed snapshot,
-  so "departing in the next few minutes" means nothing for them.
-  """
-  return parse_departures(json.loads(fallback.RESPONSE))
-
-
-def fallback_calling_points(station: str) -> tuple[str, ...]:
-  """Calling points for the first departure of the baked-in board."""
-  return parse_calling_points(json.loads(fallback.SERVICE), station)
-
-
-def _lineup_url(endpoint: str, station: str, filter_to: str) -> str:
-  return (
-      endpoint
-      + '/gb-nr/location?code={}&filterTo={}&timeWindow={}'.format(
-          station, filter_to, _TIME_WINDOW_MINS
-      )
-  )
-
-
-def _get_json(url: str, access_token: str, buffer, ssl_context):
-  """GETs a URL and decodes the JSON body, saying so either way.
-
-  Every request the firmware makes of the API comes through here, and each one
-  says so: the board is allowed a hundred an hour, and counting what it spends
-  meant counting the lines that happened to mention a request rather than the
-  requests. The token travels in a header, so there is nothing in a URL worth
-  keeping out of the log.
-  """
-  try:
-    response = http_request(
-        url,
-        bearer_token=access_token,
-        timeout=_REQUEST_TIMEOUT,
-        buffer=buffer,
-        ssl_context=ssl_context,
-    )
-  except Exception as e:
-    # Answered by nothing at all, which is a request spent the same as any
-    # other and the only kind that would otherwise go unmentioned.
-    logging.log('API GET {} failed: {}', url, e)
-    raise
-
-  logging.log('API GET {} -> {}', url, response.status_code)
-  if response.status_code == 401:
-    raise AuthError('Token rejected by API.')
-  if response.status_code == 429:
-    # The API tells us how long to wait, and it is generous: minutes, not
-    # seconds. Guessing shorter just spends requests we do not have.
-    raise RateLimitError(int(response.headers.get('retry-after', 0) or 0))
-  if response.status_code != 200:
-    raise ValueError('API request failed! {}'.format(response.status_code))
-  # TODO: JSON decoding allocates a lot of small objects, which can put pressure
-  # on memory fragmentation. Might be worth writing custom parsing of content.
-  return json.loads(response.content)
+def _get_json(url: str, access_token: str, buffer=None, ssl_context=None):
+  rtt.http_request = http_request
+  return rtt.get_json(url, access_token, buffer, ssl_context)
 
 
 def get_access_token(
@@ -418,64 +131,9 @@ def get_access_token(
     buffer: memoryview | None = None,
     ssl_context: ssl.SSLContext | None = None,
 ) -> str:
-  """Exchanges the long-life refresh token for a short-lived access token."""
   return _get_json(
       endpoint + '/api/get_access_token', refresh_token, buffer, ssl_context
   )['token']
-
-
-def parse_departures(response_json, min_departure_time: int = 0) -> Station:
-  """Turns a location line-up response into the board to display.
-
-  Kept separate from fetching so that the departures baked into the firmware
-  go through exactly the same parsing as live ones.
-  """
-  now = time.mktime(utils.get_uk_time())
-  departures = []
-  services = response_json.get('services') or []
-  for service in services:
-    departure = service['temporalData'].get('departure')
-    if departure is None:
-      continue  # An arrival, so nothing to show on a departure board.
-
-    # Services that aren't advertised to the public have no advertised time.
-    booked = departure.get('scheduleAdvertised')
-    if booked is None:
-      continue
-
-    if min_departure_time > 0:
-      if now + (min_departure_time * 60) > _to_epoch(booked):
-        continue
-
-    # We could have multiple destinations, so concatenate them together.
-    destinations = ','.join(
-        d['location']['description'] for d in service['destination']
-    )
-
-    metadata = service.get('scheduleMetadata', {})
-
-    departures.append(
-        Departure(
-            destinations,
-            _to_hhmm(booked),
-            _to_hhmm(departure.get('realtimeForecast') or booked),
-            departure.get('isCancelled', False),
-            metadata.get('uniqueIdentity', ''),
-        )
-    )
-
-  results = Station(response_json['query']['location']['description'], departures)
-  logging.log(
-      '{} services for {}, {} to show{}',
-      len(services),
-      results.name,
-      len(departures),
-      '' if min_departure_time <= 0
-      else ' (skipping the next {} mins)'.format(min_departure_time),
-  )
-  del response_json
-  gc.collect()  # Explicitly delete and GC JSON objects.
-  return results
 
 
 def get_departures(
@@ -488,7 +146,6 @@ def get_departures(
     buffer: memoryview | None = None,
     ssl_context: ssl.SSLContext | None = None,
 ) -> Station:
-  """Requests set of departures from->to provided stations."""
   return parse_departures(
       _get_json(
           _lineup_url(endpoint, station, destination),
@@ -500,26 +157,6 @@ def get_departures(
   )
 
 
-def parse_calling_points(response_json, station: str) -> tuple[str, ...]:
-  """Stations a service calls at after the one we are standing at.
-
-  Kept separate from fetching so that the service baked into the firmware
-  goes through exactly the same parsing as a live one.
-  """
-  names = []
-  passed_us = False
-  for location in response_json.get('service', {}).get('locations') or []:
-    detail = location.get('location', {})
-    if passed_us:
-      names.append(detail.get('description', ''))
-    elif station in (detail.get('shortCodes') or []):
-      passed_us = True
-
-  del response_json
-  gc.collect()
-  return tuple(names)
-
-
 def get_calling_points(
     identity: str,
     station: str,
@@ -529,11 +166,6 @@ def get_calling_points(
     buffer: memoryview | None = None,
     ssl_context: ssl.SSLContext | None = None,
 ) -> tuple[str, ...]:
-  """Requests the calling points for a service.
-
-  A separate request per service, which is why only the first departure's
-  calling points are ever fetched.
-  """
   return parse_calling_points(
       _get_json(
           endpoint + '/rtt/service?uniqueIdentity=' + identity,
