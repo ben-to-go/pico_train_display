@@ -48,33 +48,22 @@ firmware: baked | $(MICROPYTHON_DIR)
 	@cp $(RP2_BUILD)/firmware.uf2 $(FIRMWARE)
 	@echo 'Flash this: $(FIRMWARE)'
 
-FLASH_NUKE_URL ?= https://datasheets.raspberrypi.com/soft/flash_nuke.uf2
-FLASH_NUKE ?= build/flash_nuke.uf2
+PICO ?= /Volumes/RPI-RP2
+FLASH_NUKE = build/flash_nuke.uf2
 
-# Flashes the built firmware if a Pico is plugged in in BOOTSEL mode.
-# Pass NUKE=1 (or run 'make flash-n' / 'make fn') to wipe flash memory first.
+# Copies the firmware to a connected Pico in BOOTSEL mode.
 flash f: firmware
-	@vol=$$(ls -d /Volumes/RPI-RP2 /Volumes/RP2350 /media/*/RPI-RP2 /media/*/RP2350 2>/dev/null | head -n 1); \
-	if [ -n "$$vol" ] && [ -d "$$vol" ]; then \
-		if [ "$(NUKE)" = "1" ] || [ "$(nuke)" = "1" ]; then \
-			if [ ! -f "$(FLASH_NUKE)" ]; then \
-				echo "Downloading $$(basename $(FLASH_NUKE))..."; \
-				mkdir -p $$(dirname $(FLASH_NUKE)); \
-				curl -sSfL $(FLASH_NUKE_URL) -o $(FLASH_NUKE); \
-			fi; \
-			echo "Nuking flash memory ($$(basename $(FLASH_NUKE)))..."; \
-			cp $(FLASH_NUKE) "$$vol/"; \
-			echo "Waiting for Pico to reconnect..."; \
-			sleep 1; \
-			while ! ls -d /Volumes/RPI-RP2 /Volumes/RP2350 /media/*/RPI-RP2 /media/*/RP2350 2>/dev/null >/dev/null; do sleep 0.5; done; \
-			vol=$$(ls -d /Volumes/RPI-RP2 /Volumes/RP2350 /media/*/RPI-RP2 /media/*/RP2350 2>/dev/null | head -n 1); \
-		fi; \
-		echo "Flashing $$vol..."; \
-		cp $(FIRMWARE) "$$vol/"; \
-	fi
+	cp $(FIRMWARE) $(PICO)/
 
-flash-n fn:
-	@$(MAKE) flash NUKE=1
+# Erases flash with flash_nuke.uf2, waits for reboot, then flashes the firmware.
+flash-n fn: | $(FLASH_NUKE)
+	cp $(FLASH_NUKE) $(PICO)/
+	sleep 2
+	$(MAKE) f
+
+$(FLASH_NUKE):
+	mkdir -p $(dir $@)
+	curl -sSfL https://datasheets.raspberrypi.com/soft/flash_nuke.uf2 -o $@
 
 # The tokens this image carries, out of the .env sim/run.sh already reads and
 # into a module the manifest freezes. Into build/ because it is generated, and
