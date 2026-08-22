@@ -263,7 +263,7 @@ def run(config: config_module.Config):
 
       # If the link or radio is down, reboot immediately to reset hardware:
       if wlan is None or not wlan.isconnected():
-        logging.log(
+        logging.error(
             'Wi-Fi connection lost, rebooting immediately to reset radio...'
         )
         raise _RadioIsGone()
@@ -287,7 +287,7 @@ def run(config: config_module.Config):
           wait = max(update_interval, e.retry_after)
           logging.log('Rate limited (429), backing off for {}s...', wait)
         elif is_socket_error or (wlan is not None and not wlan.isconnected()):
-          logging.log(
+          logging.error(
               'Network/socket error ({}), rebooting immediately to reset '
               'radio...',
               e,
@@ -299,7 +299,7 @@ def run(config: config_module.Config):
           # Keep the display running (with clock + stale dot) and retry on
           # normal interval without rebooting in a loop.
           wait = update_interval
-          logging.log(
+          logging.error(
               'API update failed ({}), will retry in {}s: {}',
               type(e).__name__,
               wait,
@@ -402,7 +402,7 @@ def main():
     # the reset in the shutdown below. Returning gets it there without the
     # traceback and the memory dump an unhandled exception prints, neither of
     # which says anything about a radio that stopped answering.
-    logging.log('Rebooting to get the radio back.')
+    logging.error('Rebooting to get the radio back.')
 
 
 if __name__ == '__main__':
@@ -411,7 +411,7 @@ if __name__ == '__main__':
   except KeyboardInterrupt:
     logging.log('Keyboard interrupt!')
   except Exception as e:
-    logging.log('Unhandled exception!')
+    logging.error('Unhandled exception!')
     logging.exception(e)
     _log_memory()
     raise e
