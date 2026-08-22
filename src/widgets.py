@@ -25,6 +25,18 @@ import fonts
 import trains
 
 
+def _ticks_ms() -> int:
+  if hasattr(time, 'ticks_ms'):
+    return time.ticks_ms()
+  return int(time.time() * 1000)
+
+
+def _ticks_diff(t1: int, t2: int) -> int:
+  if hasattr(time, 'ticks_diff'):
+    return time.ticks_diff(t1, t2)
+  return t1 - t2
+
+
 # The next train carries no number and the board counts no further than 3rd,
 # as a real indicator does.
 _ORDINALS = ('', '2nd', '3rd')
@@ -236,9 +248,10 @@ class ScrollingTextWidget(Widget):
     self._label_width = font.calculate_bounds(label)[0] if label else 0
     self._text = ''
     self._offsets = [0]  # cumulative pixel width before each character
-    self._scroll = 0
+    self._scroll = 0.0
     self._scrolled_at = None
     self._needs_clear = False
+    self._last_rendered_scroll = None
 
   def set_text(self, text: str) -> None:
     if text == self._text:
@@ -249,9 +262,10 @@ class ScrollingTextWidget(Widget):
     for char in text:
       offsets.append(offsets[-1] + self._font.calculate_bounds(char)[0])
     self._offsets = offsets
-    self._scroll = 0
+    self._scroll = 0.0
     self._scrolled_at = None
     self._needs_clear = True
+    self._last_rendered_scroll = None
 
   def render(self, x: int, y: int, w: int, h: int) -> bool:
     if not self._text:
@@ -259,22 +273,44 @@ class ScrollingTextWidget(Widget):
         return False
       self._screen.fill_rect(x, y, w, h, 0)
       self._needs_clear = False
+      self._last_rendered_scroll = None
       return True
-
-    self._needs_clear = False
-    self._screen.fill_rect(x, y, w, h, 0)
 
     window_x = x + self._label_width
     window_w = w - self._label_width
     width = self._offsets[-1]
 
     if width <= window_w:
+      if not self._needs_clear and self._last_rendered_scroll == 0:
+        return False
+      self._screen.fill_rect(x, y, w, h, 0)
       self._font.render_text(self._text, self._screen, window_x, y)
       self._render_label(x, y, h)
+      self._needs_clear = False
+      self._last_rendered_scroll = 0
       return True
 
-    # Find the run of characters visible in the window beside the label.
+    # Advance by elapsed time, not by one frame, so the stations read at the
+    # same pace whatever the refresh rate is and however long a frame took.
+    now = _ticks_ms()
+    if self._scrolled_at is not None:
+      elapsed = _ticks_diff(now, self._scrolled_at)
+      self._scroll += self._pixels_per_second * elapsed / 1000.0
+    self._scrolled_at = now
+
+    if self._scroll > width + _SCROLL_GAP:
+      # Off the right hand edge of the window, ready to come round again.
+      self._scroll = float(-window_w)
+
     scroll = int(self._scroll)
+    if not self._needs_clear and scroll == self._last_rendered_scroll:
+      return False
+
+    self._needs_clear = False
+    self._last_rendered_scroll = scroll
+    self._screen.fill_rect(x, y, w, h, 0)
+
+    # Find the run of characters visible in the window beside the label.
     start = 0
     while start < len(self._text) and self._offsets[start + 1] <= scroll:
       start += 1
@@ -288,20 +324,7 @@ class ScrollingTextWidget(Widget):
         window_x + self._offsets[start] - scroll,
         y,
     )
-
     self._render_label(x, y, h)
-
-    # Advance by elapsed time, not by one frame, so the stations read at the
-    # same pace whatever the refresh rate is and however long a frame took.
-    now = time.ticks_ms()
-    if self._scrolled_at is not None:
-      elapsed = time.ticks_diff(now, self._scrolled_at)
-      self._scroll += self._pixels_per_second * elapsed / 1000
-    self._scrolled_at = now
-
-    if self._scroll > width + _SCROLL_GAP:
-      # Off the right hand edge of the window, ready to come round again.
-      self._scroll = -window_w
     return True
 
   def _render_label(self, x: int, y: int, h: int) -> None:
