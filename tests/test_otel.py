@@ -33,6 +33,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import time
 import unittest
 
@@ -46,6 +47,7 @@ import config  # noqa: E402
 import logging  # noqa: E402
 import otel  # noqa: E402
 import trains  # noqa: E402
+import wal  # noqa: E402
 
 # A clock NTP has been to. A float, as time.time() is on a desktop and in the
 # simulator; the board deals in whole seconds and would not have caught the
@@ -71,7 +73,11 @@ class _Collector:
     return json.loads(self.batches[batch][1]['body'])
 
   def records(self, batch=0):
-    return self.sent(batch)['resourceLogs'][0]['scopeLogs'][0]['logRecords']
+    records = []
+    for rlog in self.sent(batch)['resourceLogs']:
+      for slog in rlog['scopeLogs']:
+        records.extend(slog['logRecords'])
+    return records
 
   def lines(self, batch=0):
     return [r['body']['stringValue'] for r in self.records(batch)]
@@ -85,7 +91,16 @@ class _SinkTestCase(unittest.TestCase):
     self.addCleanup(setattr, time, 'time', time.time)
     time.time = lambda: _NOW
 
-    self.sink = otel.Sink('https://collector.example/otlp', 'Basic abc123')
+    self.wal_file = tempfile.NamedTemporaryFile(delete=False)
+    self.wal_file.close()
+    self.wal_path = self.wal_file.name
+    self.addCleanup(
+        lambda: os.path.exists(self.wal_path) and os.unlink(self.wal_path)
+    )
+
+    self.sink = otel.Sink(
+        'https://collector.example/otlp', 'Basic abc123', wal_path=self.wal_path
+    )
     self.addCleanup(logging.set_sink, None)
     self.addCleanup(setattr, logging, '_write', logging._write)
     logging._write = lambda msg: None
@@ -308,7 +323,7 @@ class CaptureTest(_SinkTestCase):
   """That everything the firmware logs is something the collector sees."""
 
   def lines(self):
-    return [line for _, _, line in self.sink._lines]
+    return [entry[2] for entry in self.sink._lines]
 
   def test_every_logged_line_reaches_the_sink(self):
     logging.log('Connecting to SSID: {}', 'a-network')
@@ -334,7 +349,7 @@ class CaptureTest(_SinkTestCase):
 
     self.assertTrue(any('boom' in line for line in self.lines()))
     self.assertEqual([logging.ERROR] * len(self.sink._lines),
-                     [severity for _, severity, _ in self.sink._lines])
+                     [entry[1] for entry in self.sink._lines])
 
   def test_nothing_in_the_firmware_writes_behind_the_sinks_back(self):
     # The sink is fed by logging, so anything printing for itself is a line
@@ -355,6 +370,90 @@ class CaptureTest(_SinkTestCase):
             offenders.append(os.path.relpath(path, _ROOT))
 
     self.assertEqual([], offenders, 'log these through logging instead')
+
+
+class WalPersistenceTest(unittest.TestCase):
+  """That unsent logs are persisted across restarts and delivered on reconnect."""
+
+  def setUp(self):
+    self.addCleanup(setattr, trains, 'http_request', trains.http_request)
+    self.addCleanup(setattr, time, 'time', time.time)
+    time.time = lambda: _NOW
+
+    self.wal_file = tempfile.NamedTemporaryFile(delete=False)
+    self.wal_file.close()
+    self.wal_path = self.wal_file.name
+    self.addCleanup(
+        lambda: os.path.exists(self.wal_path) and os.unlink(self.wal_path)
+    )
+
+  def test_persists_unsent_lines_on_failure(self):
+    collector = _Collector(error=OSError('network down'))
+    trains.http_request = collector
+
+    sink = otel.Sink(
+        'https://collector.example/otlp', 'Basic abc123', wal_path=self.wal_path
+    )
+    sink.write('before reboot 1')
+    sink.write('before reboot 2')
+
+    self.assertFalse(sink.send())
+
+    # Verify WAL file on disk contains the 2 unsent lines
+    persisted = wal.load(self.wal_path)
+    self.assertEqual(2, len(persisted))
+    self.assertEqual('before reboot 1', persisted[0][2])
+    self.assertEqual('before reboot 2', persisted[1][2])
+
+  def test_reloads_persisted_lines_on_startup_and_clears_on_success(self):
+    # Simulate an earlier run that saved logs to WAL
+    old_run_id = 'deadbeef'
+    wal.save([
+        [int(_NOW) - 10, 'INFO', 'rebooting soon', old_run_id],
+        [int(_NOW) - 5, 'ERROR', 'watchdog triggered', old_run_id],
+    ], path=self.wal_path)
+
+    collector = _Collector()
+    trains.http_request = collector
+
+    # New boot: sink initialized with WAL path
+    sink = otel.Sink(
+        'https://collector.example/otlp', 'Basic abc123', wal_path=self.wal_path
+    )
+    sink.write('new boot line')
+
+    self.assertTrue(sink.send())
+
+    # Verify sent payload contains both previous run logs and new boot log
+    self.assertEqual(
+        ['rebooting soon', 'watchdog triggered', 'new boot line'],
+        collector.lines(),
+    )
+
+    # Verify separate resource logs were created for each run ID
+    rlogs = collector.sent()['resourceLogs']
+    run_ids = [
+        attr['value']['stringValue']
+        for rlog in rlogs
+        for attr in rlog['resource']['attributes']
+        if attr['key'] == 'service.instance.id'
+    ]
+    self.assertIn(old_run_id, run_ids)
+    self.assertIn(otel.RUN_ID, run_ids)
+
+    # Verify WAL was cleared after successful send
+    self.assertEqual([], wal.load(self.wal_path))
+
+  def test_flush_wal_saves_buffer_on_shutdown(self):
+    sink = otel.Sink(
+        'https://collector.example/otlp', 'Basic abc123', wal_path=self.wal_path
+    )
+    sink.write('shutdown log')
+    sink.flush_wal()
+
+    persisted = wal.load(self.wal_path)
+    self.assertEqual(1, len(persisted))
+    self.assertEqual('shutdown log', persisted[0][2])
 
 
 class ConfigTest(unittest.TestCase):

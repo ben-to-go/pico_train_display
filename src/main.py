@@ -140,6 +140,19 @@ def _no_power_saving(wlan: network.WLAN):
     logging.exception(e)
 
 
+def _wifi_status_desc(status: int) -> str:
+  statuses = {
+      0: 'STAT_IDLE',
+      1: 'STAT_CONNECTING',
+      2: 'STAT_WRONG_PASSWORD',
+      3: 'STAT_GOT_IP',
+      -1: 'STAT_CONNECT_FAIL',
+      -2: 'STAT_NO_AP_FOUND',
+      -3: 'STAT_WRONG_PASSWORD',
+  }
+  return statuses.get(status, str(status))
+
+
 def _connect(
     ssid: str, password: str, screen: display.Display | None = None
 ) -> network.WLAN | None:
@@ -173,12 +186,16 @@ def _connect(
 
     for i in range(_CONNECT_TIMEOUT):
       if wlan.isconnected():
-        logging.log('Connected!')
-        logging.log(wlan.ifconfig())
+        ifc = wlan.ifconfig()
+        logging.log('Connected! IP: {}, Gateway: {}, DNS: {}', ifc[0], ifc[2], ifc[3])
         return wlan
 
       if wlan.status() < 0:
-        logging.log('Wifi status={}, retrying...', wlan.status())
+        logging.log(
+            'Wifi link failure: status={} ({}), retrying...',
+            wlan.status(),
+            _wifi_status_desc(wlan.status()),
+        )
         try:
           wlan.disconnect()
         except Exception:
@@ -198,9 +215,10 @@ def _connect(
     return None
 
   logging.log(
-      'Failed to connect to wifi in {} secs (status={})',
+      'Failed to connect to wifi in {} secs: status={} ({})',
       _CONNECT_TIMEOUT,
       wlan.status(),
+      _wifi_status_desc(wlan.status()),
   )
   return None
 
@@ -561,6 +579,7 @@ if __name__ == '__main__':
     # reboot happens either way.
     _arm_shutdown_watchdog()
     otel.send()
+    otel.flush_wal()
     logging.on_exit()
 
     # Hard reset device to reset RAM. Although this should be unnecessary,
