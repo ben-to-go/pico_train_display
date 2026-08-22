@@ -387,10 +387,14 @@ def run(config: config_module.Config):
         # we can't parse. The board keeps showing what it has either way, so
         # none of it is worth resetting the device over.
         failures += 1
-        if isinstance(e, OSError) and e.errno == errno.ECONNABORTED:
-          # Aborted mid-request, which can happen while still associated, so
-          # the check at the top of the loop would not catch it.
-          logging.log('Received ECONNABORTED error, try reconnecting...')
+        is_socket_error = isinstance(e, OSError) and (
+            e.errno in (errno.ECONNABORTED, errno.ETIMEDOUT, 110)
+        )
+        if is_socket_error or failures >= 2:
+          # Network/socket failed or consecutive updates dropped. The CYW43
+          # driver can get wedged while isconnected() still reports True,
+          # so soft-cycling the interface brings it back without a full reboot.
+          logging.log('Network error ({}), cycling wifi connection...', e)
           wlan = _connect(config.wifi.ssid, config.wifi.password)
         wait = trains.retry_wait(e, failures, update_interval)
         logging.log(
