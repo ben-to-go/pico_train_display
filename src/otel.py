@@ -57,9 +57,9 @@ _CLOCK_IS_SET = 1735689600  # 2025-01-01, before any real boot.
 # reach the collector remembers. A boot and a few failures over.
 _MAX_LINES = 64
 
-# Short, for the same reason the departures request is short: the display has
-# a board to draw, and this is the least important thing it does.
-_TIMEOUT = 5
+# 15s allows sufficient time for TLS 1.3 handshake and JSON payload delivery
+# over 2.4GHz Wi-Fi without false timeouts.
+_TIMEOUT = 15
 
 # What the log shows up as at the collector, for every display that sends one.
 # Deliberately not a setting: a name that can be changed per board is a name
