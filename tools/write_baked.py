@@ -88,7 +88,8 @@ def describe(values: dict) -> str:
   baked = [name for name in _BAKED if values.get(name)]
   if not baked:
     return 'nothing, so the setup page will ask for the tokens'
-  return ', '.join('{} ({} chars)'.format(n, len(values[n])) for n in baked)
+  return ', '.join(baked)
+
 
 
 def main() -> int:

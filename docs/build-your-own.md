@@ -114,12 +114,12 @@ KNOWN_WIFI='[{"ssid": "HomeNetwork", "password": "SecretPassword"}, {"ssid": "Of
 make firmware
 ```
 
-The build prints what it baked in, and how long each value was, so a `.env` it
-could not read is obvious rather than silent:
+The build prints which settings were baked in:
 
 ```
-  Baked in: RTT_TOKEN (32 chars), OTEL_HEADERS (96 chars), KNOWN_WIFI (58 chars)
+  Baked in: RTT_TOKEN, OTEL_HEADERS, KNOWN_WIFI
 ```
+
 
 Flash that image and the display scans for nearby Wi-Fi networks on startup,
 automatically connecting to the best available known network.
