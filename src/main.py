@@ -376,19 +376,25 @@ def _run_setup():
 
 def main():
   """Loads config, configures logging and OpenTelemetry, and launches run()."""
+  config = None
   try:
     with open('config.json', 'r') as f:
       config = config_module.load(json.load(f))
   except (OSError, ValueError, TypeError) as e:
-    # No config, or one this firmware cannot read: a setting that has since
-    # been removed, a value out of range, a file that got truncated. They all
-    # leave nothing to run on, so ask for it again. Resetting instead just
-    # loops, because the setup screen only appears when there is no config and
-    # an unreadable one still counts as a config.
-    logging.log('No usable config, starting setup.')
-    logging.exception(e)
-    _run_setup()
-    return
+    try:
+      fallback_cfg = config_module.load({})
+      if fallback_cfg.wifi.networks and fallback_cfg.rtt.token:
+        logging.log('Using baked credentials and defaults.')
+        config = fallback_cfg
+    except Exception:
+      pass
+
+    if config is None:
+      logging.log('No usable config, starting setup.')
+      logging.exception(e)
+      _run_setup()
+      return
+
 
   if config.debug.log:
     logging.set_logging_file('debug.txt')

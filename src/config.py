@@ -277,24 +277,27 @@ class Config:
   def __init__(
       self,
       *,
-      destination: str,
-      station: str,
-      wifi: WifiConfig,
-      rtt: RttConfig,
-      display: DisplayConfig,
+      destination: str = 'MYB',
+      station: str = 'SKM',
+      wifi: WifiConfig | None = None,
+      rtt: RttConfig | None = None,
+      display: DisplayConfig | None = None,
       min_departure_time: int = 0,
       debug: DebugConfig = DebugConfig(),
       otel: OtelConfig = OtelConfig(),
   ):
     self.destination = destination
     self.station = station
-    self.wifi = wifi
-    self.rtt = rtt
-    self.display = display
+    self.wifi = wifi if wifi is not None else WifiConfig()
+    self.rtt = (
+        rtt if rtt is not None else RttConfig('https://data.rtt.io', '', 120)
+    )
+    self.display = display if display is not None else DisplayConfig(refresh=60)
     self.min_departure_time = min_departure_time
     self.debug = debug
     self.otel = otel
     self.validate()
+
 
   def validate(self):
     if len(self.destination) != 3:
