@@ -135,6 +135,12 @@ class HttpSocketConnectTest(unittest.TestCase):
     self.assertIsNotNone(s)
     self.assertEqual([15000], poll_calls)
 
+  def test_response_records_duration_ms(self):
+    r = http.Response(200, {'content-type': 'application/json'}, b'{}', duration_ms=125)
+    self.assertEqual(125, r.duration_ms)
+    self.assertEqual(200, r.status_code)
+    self.assertEqual(b'{}', r.content)
+
 
 if __name__ == '__main__':
   unittest.main()

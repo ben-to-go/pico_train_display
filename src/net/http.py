@@ -22,8 +22,21 @@ import errno
 import select
 import socket
 import ssl
+import time
 
 from models import Response
+
+
+def _ticks_ms() -> int:
+  if hasattr(time, 'ticks_ms'):
+    return time.ticks_ms()
+  return int(time.time() * 1000)
+
+
+def _ticks_diff(t1: int, t2: int) -> int:
+  if hasattr(time, 'ticks_diff'):
+    return time.ticks_diff(t1, t2)
+  return t1 - t2
 
 # What connect() reports when the connection is not refused but simply not
 # finished being made, none of which is a failure: the poll that follows is
@@ -168,6 +181,7 @@ def http_request(
     ssl_context: ssl.SSLContext | None = None,
 ) -> Response:
   """Sends an HTTP request and returns Response with status, headers, and body."""
+  start_ms = _ticks_ms()
   proto, host, port, path = _parse_url(url)
   s = _connect_socket(host, port, timeout)
 
@@ -199,4 +213,5 @@ def http_request(
   finally:
     s.close()
 
-  return Response(status, response_headers, content)
+  duration_ms = _ticks_diff(_ticks_ms(), start_ms)
+  return Response(status, response_headers, content, duration_ms=duration_ms)
