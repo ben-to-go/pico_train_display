@@ -50,6 +50,20 @@ def _ticks_diff(t1: int, t2: int) -> int:
 _CONNECT_UNDERWAY = (errno.EINPROGRESS, errno.EALREADY, 56, 106)
 _REDIRECT_CODES = (301, 302, 303, 307, 308)
 
+# Cached persistent connection: (proto, host, port, socket)
+_cached_conn = None
+
+
+def close_cached_connection():
+  """Closes any open cached keep-alive connection."""
+  global _cached_conn
+  if _cached_conn is not None:
+    try:
+      _cached_conn[3].close()
+    except Exception:
+      pass
+    _cached_conn = None
+
 
 def _parse_url(url: str) -> tuple[str, str, int, str]:
   """Extracts (protocol, host, port, path) from a URL string."""
@@ -117,6 +131,41 @@ def _wrap_tls(s: socket.socket, host: str, ssl_context: ssl.SSLContext | None):
   return ssl.wrap_socket(s, server_hostname=host)
 
 
+def _get_connection(
+    proto: str,
+    host: str,
+    port: int,
+    timeout: int | None,
+    ssl_context: ssl.SSLContext | None,
+) -> tuple[socket.socket, int, int, int, bool]:
+  """Gets a cached connection or connects a new TCP/TLS socket."""
+  global _cached_conn
+  if _cached_conn is not None:
+    c_proto, c_host, c_port, c_sock = _cached_conn
+    _cached_conn = None
+    if (c_proto, c_host, c_port) == (proto, host, port):
+      if timeout is not None:
+        c_sock.settimeout(timeout)
+      return c_sock, 0, 0, 0, True
+    else:
+      try:
+        c_sock.close()
+      except Exception:
+        pass
+
+  s, dns_ms, tcp_ms = _connect_socket(host, port, timeout)
+  t_tls_start = _ticks_ms()
+  if proto == 'https:':
+    try:
+      s = _wrap_tls(s, host, ssl_context)
+    except Exception as e:
+      elapsed = _ticks_diff(_ticks_ms(), t_tls_start)
+      err = getattr(e, 'errno', errno.ECONNABORTED)
+      raise OSError(err, f'{e} (during tls_handshake after {elapsed}ms)') from e
+  tls_ms = _ticks_diff(_ticks_ms(), t_tls_start)
+  return s, dns_ms, tcp_ms, tls_ms, False
+
+
 def _send_request(
     s: socket.socket,
     method: str,
@@ -126,26 +175,30 @@ def _send_request(
     bearer_token: str | None,
     body: str | bytes | None,
 ) -> None:
-  """Writes HTTP 1.0 request headers and payload to socket."""
+  """Writes HTTP 1.1 request headers and payload to socket."""
   if body is not None and not isinstance(body, bytes):
     body = body.encode('utf-8')
 
-  s.write('{} /{} HTTP/1.0\r\n'.format(method, path))
+  s.write('{} /{} HTTP/1.1\r\n'.format(method, path))
   s.write('Host: {}\r\n'.format(host))
+  s.write('Connection: keep-alive\r\n')
   if bearer_token is not None:
     s.write('Authorization: Bearer {}\r\n'.format(bearer_token))
   for name, value in (headers or {}).items():
     s.write('{}: {}\r\n'.format(name, value))
   if body is not None:
     s.write('Content-Length: {}\r\n'.format(len(body)))
-  s.write('Connection: close\r\n\r\n')
+  s.write('\r\n')
   if body is not None:
     s.write(body)
 
 
 def _read_headers(s: socket.socket) -> tuple[int, dict[str, str], str | None]:
   """Parses HTTP status code, headers, and location redirect."""
-  status_parts = s.readline().split(None, 2)
+  status_line = s.readline()
+  if not status_line:
+    raise OSError(errno.ECONNRESET, 'Connection closed by server.')
+  status_parts = status_line.split(None, 2)
   if len(status_parts) < 2:
     raise ValueError('HTTP error: bad status "{}"'.format(status_parts))
   status = int(status_parts[1])
@@ -175,16 +228,36 @@ def _read_body(
     content_length_header: str | None,
 ) -> bytes | memoryview:
   """Reads response body into pre-allocated buffer or dynamically allocated bytes."""
+  content_length = int(content_length_header) if content_length_header is not None else -1
   if buffer is not None:
-    content_length = int(content_length_header or -1)
-    if content_length > -1 and len(buffer) < content_length:
+    if content_length > len(buffer):
       raise ValueError(
           'Content length > buffer! Content-length: {} Buffer {}'.format(
               content_length, len(buffer)
           )
       )
+    if content_length >= 0:
+      total = 0
+      while total < content_length:
+        n = s.readinto(buffer[total:content_length])
+        if not n:
+          break
+        total += n
+      return buffer[:total]
     length = s.readinto(buffer)
     return buffer[:length]
+
+  if content_length >= 0:
+    chunks = []
+    total = 0
+    while total < content_length:
+      chunk = s.read(content_length - total)
+      if not chunk:
+        break
+      chunks.append(chunk)
+      total += len(chunk)
+    return b''.join(chunks)
+
   return s.read()
 
 
@@ -200,34 +273,32 @@ def http_request(
     ssl_context: ssl.SSLContext | None = None,
 ) -> Response:
   """Sends an HTTP request and returns Response with status, headers, body, and timing."""
+  global _cached_conn
   start_ms = _ticks_ms()
   proto, host, port, path = _parse_url(url)
+  reused_attempt = True
+  s = None
   try:
-    s, dns_ms, tcp_ms = _connect_socket(host, port, timeout)
-
-    t_tls_start = _ticks_ms()
-    try:
-      if proto == 'https:':
-        try:
-          s = _wrap_tls(s, host, ssl_context)
-        except Exception as e:
-          elapsed = _ticks_diff(_ticks_ms(), t_tls_start)
-          err = getattr(e, 'errno', errno.ECONNABORTED)
-          raise OSError(err, f'{e} (during tls_handshake after {elapsed}ms)') from e
-      tls_ms = _ticks_diff(_ticks_ms(), t_tls_start)
-
-      t_req_start = _ticks_ms()
+    while True:
       try:
+        s, dns_ms, tcp_ms, tls_ms, is_reused = _get_connection(
+            proto, host, port, timeout, ssl_context
+        )
+        t_req_start = _ticks_ms()
         _send_request(s, method, path, host, headers, bearer_token, body)
         status, response_headers, redirect = _read_headers(s)
+        ttfb_ms = _ticks_diff(_ticks_ms(), t_req_start)
+        break
       except Exception as e:
-        elapsed = _ticks_diff(_ticks_ms(), t_req_start)
-        err = getattr(e, 'errno', errno.ECONNRESET)
-        raise OSError(err, f'{e} (during ttfb_headers after {elapsed}ms)') from e
-      ttfb_ms = _ticks_diff(_ticks_ms(), t_req_start)
-    except Exception:
-      s.close()
-      raise
+        if is_reused and reused_attempt:
+          reused_attempt = False
+          try:
+            s.close()
+          except Exception:
+            pass
+          s = None
+          continue
+        raise
 
     if redirect is not None:
       s.close()
@@ -250,9 +321,19 @@ def http_request(
         elapsed = _ticks_diff(_ticks_ms(), t_body_start)
         err = getattr(e, 'errno', errno.ECONNRESET)
         raise OSError(err, f'{e} (during read_body after {elapsed}ms)') from e
-    finally:
+    except Exception:
       s.close()
+      raise
     body_ms = _ticks_diff(_ticks_ms(), t_body_start)
+
+    can_keep_alive = (
+        response_headers.get('connection', '').lower() != 'close'
+        and response_headers.get('content-length') is not None
+    )
+    if can_keep_alive:
+      _cached_conn = (proto, host, port, s)
+    else:
+      s.close()
 
     duration_ms = _ticks_diff(_ticks_ms(), start_ms)
     response = Response(
@@ -276,5 +357,11 @@ def http_request(
     )
     return response
   except Exception as e:
+    if s is not None:
+      try:
+        s.close()
+      except Exception:
+        pass
+    _cached_conn = None
     logging.error('HTTP {} {} failed: {}', method, url, e)
     raise
