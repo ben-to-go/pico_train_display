@@ -91,12 +91,29 @@ BoardSnapshot = collections.namedtuple(
 
 
 class Response:
-  """Encapsulates an HTTP response code, headers, and body."""
+  """Encapsulates an HTTP response code, headers, body, and timing."""
 
-  def __init__(self, status_code: int, headers: dict[str, str], content):
+  def __init__(
+      self,
+      status_code: int,
+      headers: dict[str, str],
+      content,
+      duration_ms: int = 0,
+      dns_ms: int = 0,
+      tcp_ms: int = 0,
+      tls_ms: int = 0,
+      ttfb_ms: int = 0,
+      body_ms: int = 0,
+  ):
     self._status_code = status_code
     self._headers = headers
     self._content = content
+    self._duration_ms = duration_ms
+    self._dns_ms = dns_ms
+    self._tcp_ms = tcp_ms
+    self._tls_ms = tls_ms
+    self._ttfb_ms = ttfb_ms
+    self._body_ms = body_ms
 
   @property
   def status_code(self) -> int:
@@ -110,7 +127,38 @@ class Response:
   def headers(self) -> dict[str, str]:
     return self._headers
 
+  @property
+  def duration_ms(self) -> int:
+    return self._duration_ms
+
+  @property
+  def dns_ms(self) -> int:
+    return self._dns_ms
+
+  @property
+  def tcp_ms(self) -> int:
+    return self._tcp_ms
+
+  @property
+  def tls_ms(self) -> int:
+    return self._tls_ms
+
+  @property
+  def ttfb_ms(self) -> int:
+    return self._ttfb_ms
+
+  @property
+  def body_ms(self) -> int:
+    return self._body_ms
+
+  def timing_log(self) -> str:
+    """Formats standard W3C timing breakdown string."""
+    return (
+        f'{self.duration_ms}ms (dns={self.dns_ms}ms tcp={self.tcp_ms}ms '
+        f'tls={self.tls_ms}ms ttfb={self.ttfb_ms}ms body={self.body_ms}ms)'
+    )
+
   def __repr__(self) -> str:
-    return 'Response(status_code={}, headers={}, content={})'.format(
-        self.status_code, self.headers, self.content
+    return 'Response(status_code={}, headers={}, content={}, duration_ms={})'.format(
+        self.status_code, self.headers, self.content, self.duration_ms
     )

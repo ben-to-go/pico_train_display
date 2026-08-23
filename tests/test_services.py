@@ -131,9 +131,34 @@ class HttpSocketConnectTest(unittest.TestCase):
     self.addCleanup(setattr, socket, 'socket', orig_socket)
     self.addCleanup(setattr, socket, 'getaddrinfo', orig_getaddrinfo)
 
-    s = http._connect_socket('example.com', 80, timeout=15)
+    s, dns_ms, tcp_ms = http._connect_socket('example.com', 80, timeout=15)
     self.assertIsNotNone(s)
     self.assertEqual([15000], poll_calls)
+    self.assertGreaterEqual(dns_ms, 0)
+    self.assertGreaterEqual(tcp_ms, 0)
+
+  def test_response_records_w3c_timings(self):
+    r = http.Response(
+        200,
+        {'content-type': 'application/json'},
+        b'{}',
+        duration_ms=842,
+        dns_ms=42,
+        tcp_ms=68,
+        tls_ms=450,
+        ttfb_ms=210,
+        body_ms=72,
+    )
+    self.assertEqual(842, r.duration_ms)
+    self.assertEqual(42, r.dns_ms)
+    self.assertEqual(68, r.tcp_ms)
+    self.assertEqual(450, r.tls_ms)
+    self.assertEqual(210, r.ttfb_ms)
+    self.assertEqual(72, r.body_ms)
+    self.assertEqual(
+        '842ms (dns=42ms tcp=68ms tls=450ms ttfb=210ms body=72ms)',
+        r.timing_log(),
+    )
 
 
 if __name__ == '__main__':

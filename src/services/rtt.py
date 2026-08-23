@@ -86,7 +86,13 @@ def get_json(
     logging.error('API GET {} failed: {}', url, e)
     raise
 
-  logging.log('API GET {} -> {}', url, response.status_code)
+  logging.log(
+      'API GET {} -> {} ({}, {} bytes)',
+      url,
+      response.status_code,
+      response.timing_log(),
+      len(response.content),
+  )
   if response.status_code == 401:
     raise AuthError('Token rejected by API.')
   if response.status_code == 429:
