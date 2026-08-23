@@ -38,6 +38,9 @@ class Font:
     self._char_width = bytearray(font.max_ch() - font.min_ch() + 1)
     self._font = font
 
+    self._min_ch = font.min_ch()
+    self._max_ch = font.max_ch()
+
     for i in range(font.min_ch(), font.max_ch() + 1):
       buffer, height, width = font.get_ch(chr(i))
       self._chars_framebuf.append(
@@ -58,18 +61,21 @@ class Font:
       self, text: str, framebuffer: framebuf.FrameBuffer, x: int, y: int
   ) -> None:
     """Renders text into the provided display at position [x, y]."""
-    idx = 0
     for char in text:
-      idx = ord(char) - self._font.min_ch()
-      framebuffer.blit(self._chars_framebuf[idx], x, y, -1, self._palette)
-      x += self._char_width[idx]
+      code = ord(char)
+      if self._min_ch <= code <= self._max_ch:
+        idx = code - self._min_ch
+        framebuffer.blit(self._chars_framebuf[idx], x, y, -1, self._palette)
+        x += self._char_width[idx]
 
   def calculate_bounds(self, text: str) -> tuple[int, int]:
     """Calculates the bounds for a piece of text."""
     width, height = 0, 0
     for char in text:
-      width += self._char_width[ord(char) - self._font.min_ch()]
-      height = max(height, self._font.height())
+      code = ord(char)
+      if self._min_ch <= code <= self._max_ch:
+        width += self._char_width[code - self._min_ch]
+        height = max(height, self._font.height())
     return width, height
 
   def max_bounds(self) -> tuple[int, int]:
