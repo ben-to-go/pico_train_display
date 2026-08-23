@@ -50,19 +50,24 @@ def _ticks_diff(t1: int, t2: int) -> int:
 _CONNECT_UNDERWAY = (errno.EINPROGRESS, errno.EALREADY, 56, 106)
 _REDIRECT_CODES = (301, 302, 303, 307, 308)
 
-# Cached persistent connection: (proto, host, port, socket)
-_cached_conn = None
+# Connection pool: (proto, host, port) -> (socket, cached_at_ms)
+_conn_pool: dict[tuple[str, str, int], tuple[socket.socket, int]] = {}
+_MAX_IDLE_MS = 60_000  # 60 seconds max idle keep-alive duration
 
 
-def close_cached_connection():
-  """Closes any open cached keep-alive connection."""
-  global _cached_conn
-  if _cached_conn is not None:
+def close_cached_connections():
+  """Closes all open cached keep-alive connections."""
+  global _conn_pool
+  for sock, _ in _conn_pool.values():
     try:
-      _cached_conn[3].close()
+      sock.close()
     except Exception:
       pass
-    _cached_conn = None
+  _conn_pool.clear()
+
+
+# Alias for backward compatibility
+close_cached_connection = close_cached_connections
 
 
 def _parse_url(url: str) -> tuple[str, str, int, str]:
@@ -139,17 +144,18 @@ def _get_connection(
     ssl_context: ssl.SSLContext | None,
 ) -> tuple[socket.socket, int, int, int, bool]:
   """Gets a cached connection or connects a new TCP/TLS socket."""
-  global _cached_conn
-  if _cached_conn is not None:
-    c_proto, c_host, c_port, c_sock = _cached_conn
-    _cached_conn = None
-    if (c_proto, c_host, c_port) == (proto, host, port):
+  global _conn_pool
+  key = (proto, host, port)
+  now = _ticks_ms()
+  if key in _conn_pool:
+    sock, cached_at = _conn_pool.pop(key)
+    if _ticks_diff(now, cached_at) <= _MAX_IDLE_MS:
       if timeout is not None:
-        c_sock.settimeout(timeout)
-      return c_sock, 0, 0, 0, True
+        sock.settimeout(timeout)
+      return sock, 0, 0, 0, True
     else:
       try:
-        c_sock.close()
+        sock.close()
       except Exception:
         pass
 
@@ -224,11 +230,18 @@ def _read_headers(s: socket.socket) -> tuple[int, dict[str, str], str | None]:
 
 def _read_body(
     s: socket.socket,
-    buffer: memoryview | None,
+    status: int,
+    buffer: memoryview | bytearray | None,
     content_length_header: str | None,
-) -> bytes | memoryview:
+) -> bytes | memoryview | bytearray:
   """Reads response body into pre-allocated buffer or dynamically allocated bytes."""
+  if status in (204, 304):
+    return buffer[:0] if buffer is not None else b''
+
   content_length = int(content_length_header) if content_length_header is not None else -1
+  if content_length == 0:
+    return buffer[:0] if buffer is not None else b''
+
   if buffer is not None:
     if content_length > len(buffer):
       raise ValueError(
@@ -236,15 +249,16 @@ def _read_body(
               content_length, len(buffer)
           )
       )
+    mv = memoryview(buffer)
     if content_length >= 0:
       total = 0
       while total < content_length:
-        n = s.readinto(buffer[total:content_length])
+        n = s.readinto(mv[total:content_length])
         if not n:
           break
         total += n
       return buffer[:total]
-    length = s.readinto(buffer)
+    length = s.readinto(mv)
     return buffer[:length]
 
   if content_length >= 0:
@@ -273,7 +287,6 @@ def http_request(
     ssl_context: ssl.SSLContext | None = None,
 ) -> Response:
   """Sends an HTTP request and returns Response with status, headers, body, and timing."""
-  global _cached_conn
   start_ms = _ticks_ms()
   proto, host, port, path = _parse_url(url)
   reused_attempt = True
@@ -316,7 +329,7 @@ def http_request(
     t_body_start = _ticks_ms()
     try:
       try:
-        content = _read_body(s, buffer, response_headers.get('content-length'))
+        content = _read_body(s, status, buffer, response_headers.get('content-length'))
       except Exception as e:
         elapsed = _ticks_diff(_ticks_ms(), t_body_start)
         err = getattr(e, 'errno', errno.ECONNRESET)
@@ -331,7 +344,7 @@ def http_request(
         and response_headers.get('content-length') is not None
     )
     if can_keep_alive:
-      _cached_conn = (proto, host, port, s)
+      _conn_pool[(proto, host, port)] = (s, _ticks_ms())
     else:
       s.close()
 
@@ -362,6 +375,6 @@ def http_request(
         s.close()
       except Exception:
         pass
-    _cached_conn = None
+    _conn_pool.pop((proto, host, port), None)
     logging.error('HTTP {} {} failed: {}', method, url, e)
     raise

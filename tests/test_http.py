@@ -38,6 +38,8 @@ class MockSocket:
     if idx != -1:
       line = resp[:idx + 2]
       self.responses[0] = resp[idx + 2:]
+      if not self.responses[0]:
+        self.responses.pop(0)
       return line
     line = self.responses.pop(0)
     return line
@@ -134,6 +136,22 @@ class HttpTimingComprehensiveTest(unittest.TestCase):
     self.assertIn('tls=', response.timing_log())
     self.assertIn('ttfb=', response.timing_log())
     self.assertIn('body=', response.timing_log())
+
+  def test_read_body_into_bytearray_buffer(self):
+    mock_sock = MockSocket([
+        b'{"status":"ok"}',
+    ])
+    buf = bytearray(32)
+    s = mock_sock
+    headers = {'content-length': '15'}
+    res = http._read_body(s, 200, buf, headers['content-length'])
+    self.assertEqual(b'{"status":"ok"}', bytes(res))
+    self.assertEqual(b'{"status":"ok"}', bytes(buf[:15]))
+
+  def test_204_no_content_returns_empty(self):
+    mock_sock = MockSocket([])
+    res = http._read_body(mock_sock, 204, None, None)
+    self.assertEqual(b'', res)
 
   def test_connect_socket_returns_socket_and_timings(self):
     mock_sock = MockSocket()
@@ -328,6 +346,68 @@ class HttpTimingComprehensiveTest(unittest.TestCase):
     self.assertEqual(200, resp2.status_code)
     self.assertEqual(b'{"status":"ok"}', resp2.content)
     self.assertTrue(sock1.closed)
+
+  def test_keep_alive_pools_multiple_hosts_simultaneously(self):
+    rtt_sock = MockSocket([
+        b'HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}',
+        b'HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}',
+    ])
+    otel_sock = MockSocket([
+        b'HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n',
+        b'HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n',
+    ])
+
+    orig_socket = socket.socket
+    orig_getaddrinfo = socket.getaddrinfo
+    orig_wrap_socket = getattr(ssl, 'wrap_socket', None)
+    orig_poll = select.poll
+
+    class MockPoll:
+      def register(self, *a): pass
+      def poll(self, timeout): return [1]
+
+    created = []
+    def factory(*a, **k):
+      # Return rtt_sock for first call, otel_sock for second call
+      s = rtt_sock if not created else otel_sock
+      created.append(s)
+      return s
+
+    socket.socket = factory
+    socket.getaddrinfo = lambda host, *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 0, '', ('127.0.0.1', 443))]
+    ssl.wrap_socket = lambda s, **k: s
+    select.poll = lambda: MockPoll()
+
+    self.addCleanup(setattr, socket, 'socket', orig_socket)
+    self.addCleanup(setattr, socket, 'getaddrinfo', orig_getaddrinfo)
+    if orig_wrap_socket is not None:
+      self.addCleanup(setattr, ssl, 'wrap_socket', orig_wrap_socket)
+    elif hasattr(ssl, 'wrap_socket'):
+      self.addCleanup(delattr, ssl, 'wrap_socket')
+    self.addCleanup(setattr, select, 'poll', orig_poll)
+    self.addCleanup(http.close_cached_connections)
+
+    # 1. Connect to RTT
+    resp_rtt1 = http.http_request('https://data.rtt.io/api/rtt', timeout=15)
+    self.assertEqual(200, resp_rtt1.status_code)
+    self.assertEqual(1, len(created))
+
+    # 2. Connect to OTel
+    resp_otel1 = http.http_request('https://otlp-gateway.grafana.net/v1/logs', method='POST', timeout=15)
+    self.assertEqual(204, resp_otel1.status_code)
+    self.assertEqual(2, len(created))
+
+    # 3. Request RTT again -> reuses rtt_sock without creating new socket
+    resp_rtt2 = http.http_request('https://data.rtt.io/api/rtt', timeout=15)
+    self.assertEqual(200, resp_rtt2.status_code)
+    self.assertEqual(2, len(created))
+    self.assertEqual(0, resp_rtt2.dns_ms)
+
+    # 4. Request OTel again -> reuses otel_sock without creating new socket
+    resp_otel2 = http.http_request('https://otlp-gateway.grafana.net/v1/logs', method='POST', timeout=15)
+    self.assertEqual(204, resp_otel2.status_code)
+    self.assertEqual(2, len(created))
+    self.assertEqual(0, resp_otel2.dns_ms)
 
 
 if __name__ == '__main__':
