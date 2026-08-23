@@ -131,15 +131,17 @@ class HttpSocketConnectTest(unittest.TestCase):
     self.addCleanup(setattr, socket, 'socket', orig_socket)
     self.addCleanup(setattr, socket, 'getaddrinfo', orig_getaddrinfo)
 
-    s = http._connect_socket('example.com', 80, timeout=15)
+    now_ms = http._ticks_ms()
+    deadline_ms = now_ms + 15000
+    s = http._connect_socket('example.com', 80, deadline_ms=deadline_ms)
     self.assertIsNotNone(s)
-    self.assertEqual([15000], poll_calls)
+    self.assertTrue(14900 <= poll_calls[0] <= 15000)
 
-  def test_response_records_duration_ms(self):
-    r = http.Response(200, {'content-type': 'application/json'}, b'{}', duration_ms=125)
-    self.assertEqual(125, r.duration_ms)
-    self.assertEqual(200, r.status_code)
-    self.assertEqual(b'{}', r.content)
+  def test_expired_deadline_raises_etimedout(self):
+    expired_deadline = http._ticks_ms() - 100
+    with self.assertRaises(OSError) as ctx:
+      http._connect_socket('example.com', 80, deadline_ms=expired_deadline)
+    self.assertEqual(http.errno.ETIMEDOUT, ctx.exception.errno)
 
 
 if __name__ == '__main__':

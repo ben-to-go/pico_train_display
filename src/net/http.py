@@ -66,8 +66,20 @@ def _parse_url(url: str) -> tuple[str, str, int, str]:
   return proto, host, port, path
 
 
-def _connect_socket(host: str, port: int, timeout: int | None) -> socket.socket:
-  """Opens a TCP connection to the host and port with timeout."""
+def _check_remaining_timeout(deadline_ms: int | None) -> float | None:
+  if deadline_ms is None:
+    return None
+  rem_ms = _ticks_diff(deadline_ms, _ticks_ms())
+  if rem_ms <= 0:
+    raise OSError(errno.ETIMEDOUT, 'Total request timeout exceeded.')
+  return rem_ms / 1000.0
+
+
+def _connect_socket(
+    host: str, port: int, deadline_ms: int | None
+) -> socket.socket:
+  """Opens a TCP connection to the host and port respecting total deadline."""
+  _check_remaining_timeout(deadline_ms)
   addr = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)[0]
   s = socket.socket(addr[0], socket.SOCK_STREAM, addr[2])
   try:
@@ -79,12 +91,15 @@ def _connect_socket(host: str, port: int, timeout: int | None) -> socket.socket:
 
     p = select.poll()
     p.register(s, select.POLLOUT)
-    timeout_ms = int(timeout * 1000) if timeout is not None else -1
-    if not p.poll(timeout_ms):
+    rem_ms = _ticks_diff(deadline_ms, _ticks_ms()) if deadline_ms is not None else -1
+    if rem_ms <= 0 and deadline_ms is not None:
+      raise OSError(errno.ETIMEDOUT, 'Timed out connecting to socket.')
+    if not p.poll(rem_ms):
       raise OSError(errno.ETIMEDOUT, 'Timed out connecting to socket.')
 
-    if timeout is not None:
-      s.settimeout(timeout)
+    rem_s = _check_remaining_timeout(deadline_ms)
+    if rem_s is not None:
+      s.settimeout(rem_s)
     return s
   except Exception:
     s.close()
@@ -176,18 +191,30 @@ def http_request(
     body: str | bytes | None = None,
     headers: dict[str, str] | None = None,
     bearer_token: str | None = None,
-    timeout: int | None = None,
+    timeout: int | float | None = None,
     buffer: memoryview | None = None,
     ssl_context: ssl.SSLContext | None = None,
+    deadline_ms: int | None = None,
 ) -> Response:
   """Sends an HTTP request and returns Response with status, headers, and body."""
   start_ms = _ticks_ms()
+  if deadline_ms is None and timeout is not None:
+    deadline_ms = start_ms + int(timeout * 1000)
+
   proto, host, port, path = _parse_url(url)
-  s = _connect_socket(host, port, timeout)
+  s = _connect_socket(host, port, deadline_ms)
 
   try:
+    rem_s = _check_remaining_timeout(deadline_ms)
+    if rem_s is not None:
+      s.settimeout(rem_s)
+
     if proto == 'https:':
       s = _wrap_tls(s, host, ssl_context)
+
+    rem_s = _check_remaining_timeout(deadline_ms)
+    if rem_s is not None:
+      s.settimeout(rem_s)
 
     _send_request(s, method, path, host, headers, bearer_token, body)
     status, response_headers, redirect = _read_headers(s)
@@ -206,9 +233,13 @@ def http_request(
         timeout=timeout,
         buffer=buffer,
         ssl_context=ssl_context,
+        deadline_ms=deadline_ms,
     )
 
   try:
+    rem_s = _check_remaining_timeout(deadline_ms)
+    if rem_s is not None:
+      s.settimeout(rem_s)
     content = _read_body(s, buffer, response_headers.get('content-length'))
   finally:
     s.close()
