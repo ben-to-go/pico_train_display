@@ -95,6 +95,48 @@ class ConnectKnownTest(unittest.TestCase):
     self.assertEqual([('HomeNet', 'h1')], attempts)
 
 
+import net.http as http
+import select
+import socket
+
+
+class HttpSocketConnectTest(unittest.TestCase):
+
+  def test_poll_receives_timeout_in_milliseconds(self):
+    poll_calls = []
+
+    class MockPoll:
+      def register(self, s, flags):
+        pass
+      def poll(self, timeout_ms):
+        poll_calls.append(timeout_ms)
+        return [(1, select.POLLOUT)]
+
+    orig_poll = select.poll
+    select.poll = MockPoll
+    self.addCleanup(setattr, select, 'poll', orig_poll)
+
+    class MockSocket:
+      def connect(self, addr):
+        pass
+      def settimeout(self, timeout):
+        pass
+      def close(self):
+        pass
+
+    orig_socket = socket.socket
+    orig_getaddrinfo = socket.getaddrinfo
+    socket.socket = lambda *a, **k: MockSocket()
+    socket.getaddrinfo = lambda *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 0, '', ('127.0.0.1', 80))]
+    self.addCleanup(setattr, socket, 'socket', orig_socket)
+    self.addCleanup(setattr, socket, 'getaddrinfo', orig_getaddrinfo)
+
+    s = http._connect_socket('example.com', 80, timeout=15)
+    self.assertIsNotNone(s)
+    self.assertEqual([15000], poll_calls)
+
+
 if __name__ == '__main__':
   unittest.main()
+
 

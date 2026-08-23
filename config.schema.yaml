@@ -1,0 +1,137 @@
+# JSON Schema in YAML format for Pico Train Display configuration (config.json)
+$schema: "http://json-schema.org/draft-07/schema#"
+title: PicoTrainDisplayConfig
+description: Complete configuration schema for Pico Train Display (config.json)
+type: object
+required:
+  - station
+  - destination
+  - wifi
+  - rtt
+  - display
+
+properties:
+  station:
+    type: string
+    description: 3-letter CRS station code for departure board origin (e.g. SKM for Stoke Mandeville)
+    minLength: 3
+    maxLength: 3
+    pattern: "^[A-Za-z]{3}$"
+    examples:
+      - "SKM"
+      - "EUS"
+      - "KGX"
+      - "CLJ"
+
+  destination:
+    type: string
+    description: 3-letter CRS station code for filter destination (e.g. MYB for London Marylebone)
+    minLength: 3
+    maxLength: 3
+    pattern: "^[A-Za-z]{3}$"
+    examples:
+      - "MYB"
+      - "WAT"
+      - "VIC"
+      - "MAN"
+
+  wifi:
+    type: object
+    description: Wi-Fi network configuration and credentials
+    properties:
+      ssid:
+        type: string
+        description: Primary Wi-Fi network SSID (name)
+      password:
+        type: string
+        description: Primary Wi-Fi network WPA/WPA2 passphrase
+        default: ""
+      networks:
+        type: array
+        description: List of known Wi-Fi networks in order of preference / failover
+        items:
+          type: object
+          required:
+            - ssid
+          properties:
+            ssid:
+              type: string
+              description: Wi-Fi network SSID
+            password:
+              type: string
+              description: Wi-Fi network passphrase
+              default: ""
+      known_wifi:
+        type: string
+        description: Comma-separated list of known Wi-Fi networks (SSID1:pass1,SSID2:pass2)
+
+  rtt:
+    type: object
+    description: Realtime Trains (RTT) API configuration
+    required:
+      - endpoint
+      - token
+    properties:
+      endpoint:
+        type: string
+        format: uri
+        description: Realtime Trains API endpoint base URL
+        default: "https://data.rtt.io"
+      token:
+        type: string
+        description: Realtime Trains API access token (Bearer token)
+      update_interval:
+        type: integer
+        minimum: 10
+        description: Interval in seconds between live departure board polling queries
+        default: 120
+
+  display:
+    type: object
+    description: SSD1322 OLED display rendering configuration
+    required:
+      - refresh
+    properties:
+      refresh:
+        type: integer
+        minimum: 1
+        maximum: 120
+        description: Target rendering frame rate in frames per second (FPS)
+        default: 60
+      flip:
+        type: boolean
+        description: Flip the screen 180 degrees for inverted mounting
+        default: false
+      scroll_speed:
+        type: integer
+        minimum: 1
+        description: Calling point marquee scroll speed in pixels per second
+        default: 60
+
+  min_departure_time:
+    type: integer
+    minimum: 0
+    description: Minimum departure threshold in minutes from now to filter out trains already departing
+    default: 0
+
+  debug:
+    type: object
+    description: Debugging and file logging options
+    properties:
+      log:
+        type: boolean
+        description: Enable writing debug log output to flash file (debug.txt)
+        default: false
+
+  otel:
+    type: object
+    description: OpenTelemetry & Grafana Cloud Loki exporter configuration
+    properties:
+      endpoint:
+        type: string
+        format: uri
+        description: OpenTelemetry OTLP/HTTP exporter endpoint URL
+        default: "https://otlp-gateway-prod-gb-south-1.grafana.net/otlp"
+      auth:
+        type: string
+        description: Authorization header value (e.g. Basic <base64-credentials>)
