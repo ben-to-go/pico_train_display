@@ -93,10 +93,17 @@ BoardSnapshot = collections.namedtuple(
 class Response:
   """Encapsulates an HTTP response code, headers, and body."""
 
-  def __init__(self, status_code: int, headers: dict[str, str], content):
+  def __init__(
+      self,
+      status_code: int,
+      headers: dict[str, str],
+      content,
+      duration_ms: int = 0,
+  ):
     self._status_code = status_code
     self._headers = headers
     self._content = content
+    self._duration_ms = duration_ms
 
   @property
   def status_code(self) -> int:
@@ -110,7 +117,11 @@ class Response:
   def headers(self) -> dict[str, str]:
     return self._headers
 
+  @property
+  def duration_ms(self) -> int:
+    return self._duration_ms
+
   def __repr__(self) -> str:
-    return 'Response(status_code={}, headers={}, content={})'.format(
-        self.status_code, self.headers, self.content
+    return 'Response(status_code={}, headers={}, content={}, duration_ms={})'.format(
+        self.status_code, self.headers, self.content, self.duration_ms
     )
