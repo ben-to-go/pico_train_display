@@ -10,56 +10,56 @@ The following interactive diagram maps all lifecycle stages, decision points, cr
 
 ```mermaid
 flowchart TD
-    Boot([Power On / Cold Boot]) --> S1["<b>Stage 1: Boot & Config Loader</b><br/>• Read & validate config.json<br/>• Auto-create config from baked creds if missing<br/>• Purge corrupted .tmp files<br/>• Init Flash WAL (wal.log)<br/>• Create boot Run ID (otel)"]
+    Boot([⚡ Power On / Cold Boot]) --> S1
 
-    S1 --> DecisionConfig{Config Valid / Baked?}
-    
-    DecisionConfig -->|No / Missing & Unbaked| S2["<b>Stage 2: Setup Portal (AP)</b><br/>• Broadcast SSID 'Pico Train Display'<br/>• Serve captive portal (192.168.4.1)<br/>• Save config.json & machine.reset()"]
-    S2 -->|Save & Reset| Boot
+    %% Stage 1: Boot
+    S1["<b>Stage 1: Boot & Config Loader</b><br/>• Read & validate config.json<br/>• Auto-create config from baked creds if missing<br/>• Initialize Flash WAL & OTel Run ID"] --> CheckConfig{Config Ready?}
 
-    DecisionConfig -->|Yes / Baked Available| S3["<b>Stage 3: Wi-Fi & NTP Sync</b><br/>• Scan & join best known Wi-Fi (15s timeout)<br/>• Lock power mode (PM_NONE)<br/>• NTP sync & UK BST clock offsets"]
+    %% Provisioning vs Normal Start
+    CheckConfig -->|No / Missing & Unbaked| S2["<b>Stage 2: Setup Portal (AP)</b><br/>• Broadcast SSID 'Pico Train Display'<br/>• User submits config at 192.168.4.1<br/>• Save config.json & reboot"]
+    CheckConfig -->|Yes / Baked Creds| S3["<b>Stage 3: Wi-Fi & NTP Sync</b><br/>• Scan & join best known Wi-Fi (15s)<br/>• Lock power mode PM_NONE<br/>• Sync UTC time via NTP & UK BST"]
 
-    S3 --> DecisionWifi{Wi-Fi Joined?}
-    DecisionWifi -->|No: Timeout 15s| S2
-    DecisionWifi -->|Yes| S4["<b>Stage 4: Initial Board Fetch</b><br/>• Query Realtime Trains API<br/>• If offline: Load baked-in snapshot<br/>• Ship boot telemetry to Loki"]
+    %% Setup loops to reboot
+    S2 --> S6
 
+    %% Stage 3 to 4
+    S3 --> CheckWifi{Wi-Fi Joined?}
+    CheckWifi -->|No / Timeout 15s| S2
+    CheckWifi -->|Yes| S4["<b>Stage 4: Initial Board Fetch</b><br/>• Query Realtime Trains API (or baked fallback)<br/>• Ship boot telemetry to Loki<br/>• Launch Core 1 render engine"]
 
-    S4 --> Stage5
+    %% Stage 4 to Stage 5
+    S4 --> S5
 
-    subgraph Stage5 ["Stage 5: Running State (Dual-Core Architecture)"]
+    %% Stage 5: Running State
+    subgraph S5 ["Stage 5: Running State (Dual-Core Concurrency)"]
         direction TB
-        
-        subgraph Core1 ["Core 1: 60 FPS Render Engine"]
-            RenderLoop["<b>Render Loop (16.7ms)</b><br/>1. Read UK time (RTC + BST)<br/>2. Render departures & calling points<br/>3. Partial flush to SSD1322 (1,152B)<br/><i>Zero-allocation, no GC jitter</i>"]
+
+        subgraph C1 ["Core 1: Render Loop (60 FPS / 16.7ms)"]
+            R1["Draw UK clock, departures & scrolling calling points"] --> R2["Partial flush changed rows to SSD1322 (1,152 B)"]
         end
 
-        subgraph Core0 ["Core 0: Polling, Telemetry & Recovery"]
-            PollWait["Sleep update_interval (120s)"] --> CheckLink{Wi-Fi Connected?}
-            
-            CheckLink -->|Yes| FetchAPI["Fetch Live Departures"]
-            
-            FetchAPI --> DecisionAPI{API Result}
-            DecisionAPI -->|Success 200| UpdateBoard["Update BoardState<br/>Clear Stale Dot<br/>Flush WAL to Loki"]
-            UpdateBoard --> PollWait
-
-            DecisionAPI -->|Rate Limit 429| Backoff["Sleep retry_after seconds<br/><b>(NO REBOOT)</b>"]
-            Backoff --> PollWait
-
-            DecisionAPI -->|5xx / 404 / DNS| StaleHold["Keep last departures<br/>Keep clock ticking<br/>Set Stale Dot = ON<br/><b>(NO REBOOT)</b>"]
-            StaleHold --> PollWait
+        subgraph C0 ["Core 0: Polling & Network Loop (Every 120s)"]
+            P1["Wait update_interval (120s) & send OTel metrics"] --> P2{Wi-Fi & API Status}
+            P2 -->|200 OK| P3["Update Board State & Clear Stale Dot"]
+            P2 -->|429 Rate Limit| P4["Sleep retry_after seconds (No Reboot)"]
+            P2 -->|5xx / 404 / DNS| P5["Keep display running & turn on Stale Dot"]
+            P3 --> P1
+            P4 --> P1
+            P5 --> P1
         end
 
-        UpdateBoard -.->|Atomic Snapshot Swap| RenderLoop
+        P3 -.->|Atomic Snapshot Swap| R1
     end
 
-    CheckLink -->|No: Radio Loss| S6
-    DecisionAPI -->|Socket Timeout / EHOSTUNREACH| S6
+    %% Fatal Error Trigger
+    P2 -->|Radio Loss / Socket ETIMEDOUT| S6
 
+    %% Stage 6: Shutdown & Reset
     subgraph S6 ["Stage 6: Graceful Shutdown & Hardware Reset"]
-        Shutdown["• Flush crash log to flash WAL<br/>• Arm hardware watchdog (WDT)<br/>• machine.reset() (reboots in 1.2s)"]
+        Reset["• Flush unsent logs to Flash WAL<br/>• Arm hardware watchdog (WDT)<br/>• machine.reset() (1.2s hardware reboot)"]
     end
 
-    S6 -->|Hardware Reset| Boot
+    Reset -->|Reboot| Boot
 ```
 
 ---
