@@ -66,7 +66,8 @@ def _connect_socket(host: str, port: int, timeout: int | None) -> socket.socket:
 
     p = select.poll()
     p.register(s, select.POLLOUT)
-    if not p.poll(timeout if timeout is not None else -1):
+    timeout_ms = int(timeout * 1000) if timeout is not None else -1
+    if not p.poll(timeout_ms):
       raise OSError(errno.ETIMEDOUT, 'Timed out connecting to socket.')
 
     if timeout is not None:
