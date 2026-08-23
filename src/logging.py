@@ -56,10 +56,34 @@ def _write(msg: str):
   print(msg)
 
 
+def _format_logfmt(**kwargs) -> str:
+  parts = []
+  for k, v in kwargs.items():
+    if isinstance(v, str) and (' ' in v or '"' in v or '=' in v):
+      v = '"' + v.replace('"', '\\"') + '"'
+    parts.append(f'{k}={v}')
+  return ' '.join(parts)
+
+
 def _log_message(prefix: str, msg, *args, severity: str = INFO, **kwargs):
-  args = args or []
-  kwargs = kwargs or {}
-  msg = str(msg).format(*args, **kwargs)
+  msg = str(msg)
+  if args:
+    try:
+      msg = msg.format(*args)
+    except (IndexError, ValueError):
+      pass
+
+  if kwargs:
+    if '{' in msg:
+      try:
+        msg = msg.format(**kwargs)
+      except (KeyError, IndexError, ValueError):
+        pairs = _format_logfmt(**kwargs)
+        msg = f'{msg} {pairs}' if pairs else msg
+    else:
+      pairs = _format_logfmt(**kwargs)
+      msg = f'{msg} {pairs}' if pairs else msg
+
   _write('{} {}'.format(prefix, msg))
   if _sink is not None:
     # Without the prefix. Whatever the line is shipped to stamps it, and a
