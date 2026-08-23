@@ -51,7 +51,7 @@ def _parse_json_request(data: dict[str, str]):
         elif v.lower() in {'off', 'false'}:
           v = False
         else:
-          ValueError(f'Unrecognized boolean value for key {k}, {v=}')
+          raise ValueError(f'Unrecognized boolean value for key {k}, {v=}')
       else:
         raise ValueError(f'Unrecognized value type for key "{k}"')
 
@@ -67,10 +67,12 @@ async def _parse_headers(reader: asyncio.StreamReader):
   headers = {}
   while True:
     header = await reader.readline()
-    if header == b'\r\n':
+    if header == b'\r\n' or not header:
       break
-    name, value = header.decode().strip().split(': ', 1)
-    headers[name.lower()] = value
+    line = header.decode().strip()
+    if ':' in line:
+      name, value = line.split(':', 1)
+      headers[name.strip().lower()] = value.strip()
   return headers
 
 
@@ -143,10 +145,11 @@ async def _write_response(
     if content_type is None:
       raise ValueError('Must provide content_type if the response has content')
 
-    writer.write(f'Content-Type: {type}\r\n'.encode('utf8'))
+    writer.write(f'Content-Type: {content_type}\r\n'.encode('utf8'))
     writer.write(f'Content-Length: {len(content)}\r\n'.encode('utf8'))
     writer.write('\r\n'.encode('utf8'))
     writer.write(content)
+    await writer.drain()
   else:
     writer.write('\r\n'.encode('utf8'))
     await writer.drain()
@@ -169,7 +172,10 @@ async def _server_request(
     logging.log('Could not read a setup request: {}', request[:60])
     logging.exception(e)
     await _write_response(
-        writer, 500, content='Error parsing request!'.encode('utf8')
+        writer,
+        500,
+        content='Error parsing request!'.encode('utf8'),
+        content_type='text/plain',
     )
     raise
 
