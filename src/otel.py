@@ -265,6 +265,13 @@ class Sink:
         },
         timeout=_TIMEOUT,
     )
+    logging.log(
+        'OTEL POST {} -> {} ({}, {} bytes)',
+        self._url,
+        response.status_code,
+        response.timing_log(),
+        len(response.content),
+    )
     if not 200 <= response.status_code <= 299:
       raise ValueError('Collector rejected the batch! {} {}'.format(
           response.status_code, response.content))

@@ -190,6 +190,45 @@ class HttpTimingComprehensiveTest(unittest.TestCase):
     self.assertTrue(sock_301.closed)
     self.assertTrue(sock_200.closed)
 
+  def test_dns_failure_annotates_phase(self):
+    import socket
+    orig_getaddrinfo = socket.getaddrinfo
+
+    def failing_getaddrinfo(*a, **k):
+      raise OSError(socket.EAI_NONAME, 'Name or service not known')
+
+    socket.getaddrinfo = failing_getaddrinfo
+    self.addCleanup(setattr, socket, 'getaddrinfo', orig_getaddrinfo)
+
+    with self.assertRaises(OSError) as ctx:
+      http._connect_socket('invalid.host.xyz', 80, timeout=5)
+    self.assertIn('during dns', str(ctx.exception))
+
+  def test_tcp_timeout_annotates_phase(self):
+    import socket
+    import select
+
+    mock_sock = MockSocket()
+    orig_socket = socket.socket
+    orig_getaddrinfo = socket.getaddrinfo
+    orig_poll = select.poll
+
+    class TimeoutPoll:
+      def register(self, *a): pass
+      def poll(self, timeout): return []
+
+    socket.socket = lambda *a, **k: mock_sock
+    socket.getaddrinfo = lambda *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 0, '', ('127.0.0.1', 80))]
+    select.poll = lambda: TimeoutPoll()
+
+    self.addCleanup(setattr, socket, 'socket', orig_socket)
+    self.addCleanup(setattr, socket, 'getaddrinfo', orig_getaddrinfo)
+    self.addCleanup(setattr, select, 'poll', orig_poll)
+
+    with self.assertRaises(OSError) as ctx:
+      http._connect_socket('example.com', 80, timeout=1)
+    self.assertIn('during tcp_connect', str(ctx.exception))
+
 
 if __name__ == '__main__':
   unittest.main()
