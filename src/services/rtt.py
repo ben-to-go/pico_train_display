@@ -74,24 +74,12 @@ def get_json(
     ssl_context: ssl.SSLContext | None = None,
 ):
   """GETs a URL and decodes the JSON body."""
-  try:
-    response = http_request(
-        url,
-        bearer_token=access_token,
-        timeout=_REQUEST_TIMEOUT,
-        buffer=buffer,
-        ssl_context=ssl_context,
-    )
-  except Exception as e:
-    logging.error('API GET {} failed: {}', url, e)
-    raise
-
-  logging.log(
-      'API GET {} -> {} ({}, {} bytes)',
+  response = http_request(
       url,
-      response.status_code,
-      response.timing_log(),
-      len(response.content),
+      bearer_token=access_token,
+      timeout=_REQUEST_TIMEOUT,
+      buffer=buffer,
+      ssl_context=ssl_context,
   )
   if response.status_code == 401:
     raise AuthError('Token rejected by API.')

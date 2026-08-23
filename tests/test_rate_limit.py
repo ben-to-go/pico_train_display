@@ -212,7 +212,7 @@ if __name__ == '__main__':
 class EveryRequestSaysSoTest(unittest.TestCase):
   """A line per request, which is how the budget above can be counted.
 
-  Every call the firmware makes of the API goes through _get_json, and the
+  Every call the firmware makes of the API goes through http_request, and the
   ones that used to leave no trace were the ones easiest to forget: the token
   exchange, the calling points, and any request answered by nothing at all.
   """
@@ -220,38 +220,74 @@ class EveryRequestSaysSoTest(unittest.TestCase):
   def setUp(self):
     self.lines = []
     self.addCleanup(setattr, logging, '_write', logging._write)
-    self.addCleanup(setattr, trains, 'http_request', trains.http_request)
     logging._write = self.lines.append
 
-  def _answer_with(self, response):
-    trains.http_request = lambda *args, **kwargs: response
-
   def test_says_the_url_and_what_came_back(self):
-    self._answer_with(trains.Response(200, {}, b'{}'))
-    trains._get_json('https://data.rtt.io/gb-nr/location?code=SKM', 't',
-                     None, None)
+    import socket
+    import select
+    from tests.test_http import MockSocket
 
+    mock_sock = MockSocket([b'HTTP/1.0 200 OK\r\nContent-Length: 2\r\n\r\n{}'])
+    orig_socket = socket.socket
+    orig_getaddrinfo = socket.getaddrinfo
+    orig_poll = select.poll
+
+    class MockPoll:
+      def register(self, *a): pass
+      def poll(self, timeout): return [1]
+
+    socket.socket = lambda *a, **k: mock_sock
+    socket.getaddrinfo = lambda *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 0, '', ('127.0.0.1', 80))]
+    select.poll = lambda: MockPoll()
+
+    self.addCleanup(setattr, socket, 'socket', orig_socket)
+    self.addCleanup(setattr, socket, 'getaddrinfo', orig_getaddrinfo)
+    self.addCleanup(setattr, select, 'poll', orig_poll)
+
+    trains._get_json('http://data.rtt.io/gb-nr/location?code=SKM', 't', None, None)
     self.assertEqual(1, len(self.lines), self.lines)
-    self.assertIn('https://data.rtt.io/gb-nr/location?code=SKM', self.lines[0])
+    self.assertIn('http://data.rtt.io/gb-nr/location?code=SKM', self.lines[0])
     self.assertIn('200', self.lines[0])
 
   def test_a_refusal_is_still_a_request(self):
-    # It counts against the hundred an hour the same as any other.
-    self._answer_with(trains.Response(429, {'retry-after': '600'}, b'{}'))
+    import socket
+    import select
+    from tests.test_http import MockSocket
+
+    mock_sock = MockSocket([b'HTTP/1.0 429 Too Many Requests\r\nRetry-After: 600\r\nContent-Length: 0\r\n\r\n'])
+    orig_socket = socket.socket
+    orig_getaddrinfo = socket.getaddrinfo
+    orig_poll = select.poll
+
+    class MockPoll:
+      def register(self, *a): pass
+      def poll(self, timeout): return [1]
+
+    socket.socket = lambda *a, **k: mock_sock
+    socket.getaddrinfo = lambda *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 0, '', ('127.0.0.1', 80))]
+    select.poll = lambda: MockPoll()
+
+    self.addCleanup(setattr, socket, 'socket', orig_socket)
+    self.addCleanup(setattr, socket, 'getaddrinfo', orig_getaddrinfo)
+    self.addCleanup(setattr, select, 'poll', orig_poll)
+
     with self.assertRaises(trains.RateLimitError):
-      trains._get_json('https://data.rtt.io/gb-nr/location', 't', None, None)
+      trains._get_json('http://data.rtt.io/gb-nr/location', 't', None, None)
 
     self.assertTrue(any('429' in line for line in self.lines), self.lines)
 
   def test_a_request_answered_by_nothing_says_so(self):
-    # The only kind that would otherwise go unmentioned, since there is no
-    # status to report and the exception is caught two frames up.
+    import socket
+    orig_getaddrinfo = socket.getaddrinfo
+
     def refuse(*args, **kwargs):
       raise OSError('no route to host')
 
-    trains.http_request = refuse
+    socket.getaddrinfo = refuse
+    self.addCleanup(setattr, socket, 'getaddrinfo', orig_getaddrinfo)
+
     with self.assertRaises(OSError):
-      trains._get_json('https://data.rtt.io/gb-nr/location', 't', None, None)
+      trains._get_json('http://data.rtt.io/gb-nr/location', 't', None, None)
 
     self.assertTrue(any('no route to host' in line for line in self.lines),
                     self.lines)
