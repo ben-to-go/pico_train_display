@@ -66,9 +66,18 @@ def _parse_url(url: str) -> tuple[str, str, int, str]:
   return proto, host, port, path
 
 
-def _connect_socket(host: str, port: int, timeout: int | None) -> socket.socket:
-  """Opens a TCP connection to the host and port with timeout."""
+def _connect_socket(
+    host: str, port: int, timeout: int | None
+) -> tuple[socket.socket, int, int]:
+  """Opens a TCP connection to the host and port with timeout.
+
+  Returns (socket, dns_ms, tcp_ms).
+  """
+  t0 = _ticks_ms()
   addr = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)[0]
+  t_dns = _ticks_ms()
+  dns_ms = _ticks_diff(t_dns, t0)
+
   s = socket.socket(addr[0], socket.SOCK_STREAM, addr[2])
   try:
     try:
@@ -85,7 +94,8 @@ def _connect_socket(host: str, port: int, timeout: int | None) -> socket.socket:
 
     if timeout is not None:
       s.settimeout(timeout)
-    return s
+    tcp_ms = _ticks_diff(_ticks_ms(), t_dns)
+    return s, dns_ms, tcp_ms
   except Exception:
     s.close()
     raise
@@ -180,17 +190,21 @@ def http_request(
     buffer: memoryview | None = None,
     ssl_context: ssl.SSLContext | None = None,
 ) -> Response:
-  """Sends an HTTP request and returns Response with status, headers, and body."""
+  """Sends an HTTP request and returns Response with status, headers, body, and timing."""
   start_ms = _ticks_ms()
   proto, host, port, path = _parse_url(url)
-  s = _connect_socket(host, port, timeout)
+  s, dns_ms, tcp_ms = _connect_socket(host, port, timeout)
 
+  t_tls_start = _ticks_ms()
   try:
     if proto == 'https:':
       s = _wrap_tls(s, host, ssl_context)
+    tls_ms = _ticks_diff(_ticks_ms(), t_tls_start)
 
+    t_req_start = _ticks_ms()
     _send_request(s, method, path, host, headers, bearer_token, body)
     status, response_headers, redirect = _read_headers(s)
+    ttfb_ms = _ticks_diff(_ticks_ms(), t_req_start)
   except Exception:
     s.close()
     raise
@@ -208,10 +222,22 @@ def http_request(
         ssl_context=ssl_context,
     )
 
+  t_body_start = _ticks_ms()
   try:
     content = _read_body(s, buffer, response_headers.get('content-length'))
   finally:
     s.close()
+  body_ms = _ticks_diff(_ticks_ms(), t_body_start)
 
   duration_ms = _ticks_diff(_ticks_ms(), start_ms)
-  return Response(status, response_headers, content, duration_ms=duration_ms)
+  return Response(
+      status,
+      response_headers,
+      content,
+      duration_ms=duration_ms,
+      dns_ms=dns_ms,
+      tcp_ms=tcp_ms,
+      tls_ms=tls_ms,
+      ttfb_ms=ttfb_ms,
+      body_ms=body_ms,
+  )

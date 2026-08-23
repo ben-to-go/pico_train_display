@@ -87,10 +87,10 @@ def get_json(
     raise
 
   logging.log(
-      'API GET {} -> {} ({}ms, {} bytes)',
+      'API GET {} -> {} ({}, {} bytes)',
       url,
       response.status_code,
-      response.duration_ms,
+      response.timing_log(),
       len(response.content),
   )
   if response.status_code == 401:
