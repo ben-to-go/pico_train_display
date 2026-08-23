@@ -24,6 +24,7 @@ import socket
 import ssl
 import time
 
+import logging
 from models import Response
 
 
@@ -74,7 +75,13 @@ def _connect_socket(
   Returns (socket, dns_ms, tcp_ms).
   """
   t0 = _ticks_ms()
-  addr = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)[0]
+  try:
+    addr = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)[0]
+  except Exception as e:
+    elapsed = _ticks_diff(_ticks_ms(), t0)
+    err = getattr(e, 'errno', errno.EHOSTUNREACH)
+    raise OSError(err, f'{e} (during dns after {elapsed}ms)') from e
+
   t_dns = _ticks_ms()
   dns_ms = _ticks_diff(t_dns, t0)
 
@@ -84,13 +91,15 @@ def _connect_socket(
       s.connect(addr[-1])
     except OSError as e:
       if e.errno not in _CONNECT_UNDERWAY:
-        raise
+        elapsed = _ticks_diff(_ticks_ms(), t_dns)
+        raise OSError(e.errno, f'{e} (during tcp_connect after {elapsed}ms)') from e
 
     p = select.poll()
     p.register(s, select.POLLOUT)
     timeout_ms = int(timeout * 1000) if timeout is not None else -1
     if not p.poll(timeout_ms):
-      raise OSError(errno.ETIMEDOUT, 'Timed out connecting to socket.')
+      elapsed = _ticks_diff(_ticks_ms(), t_dns)
+      raise OSError(errno.ETIMEDOUT, f'Timed out connecting to socket (during tcp_connect after {elapsed}ms)')
 
     if timeout is not None:
       s.settimeout(timeout)
@@ -193,51 +202,79 @@ def http_request(
   """Sends an HTTP request and returns Response with status, headers, body, and timing."""
   start_ms = _ticks_ms()
   proto, host, port, path = _parse_url(url)
-  s, dns_ms, tcp_ms = _connect_socket(host, port, timeout)
-
-  t_tls_start = _ticks_ms()
   try:
-    if proto == 'https:':
-      s = _wrap_tls(s, host, ssl_context)
-    tls_ms = _ticks_diff(_ticks_ms(), t_tls_start)
+    s, dns_ms, tcp_ms = _connect_socket(host, port, timeout)
 
-    t_req_start = _ticks_ms()
-    _send_request(s, method, path, host, headers, bearer_token, body)
-    status, response_headers, redirect = _read_headers(s)
-    ttfb_ms = _ticks_diff(_ticks_ms(), t_req_start)
-  except Exception:
-    s.close()
-    raise
+    t_tls_start = _ticks_ms()
+    try:
+      if proto == 'https:':
+        try:
+          s = _wrap_tls(s, host, ssl_context)
+        except Exception as e:
+          elapsed = _ticks_diff(_ticks_ms(), t_tls_start)
+          err = getattr(e, 'errno', errno.ECONNABORTED)
+          raise OSError(err, f'{e} (during tls_handshake after {elapsed}ms)') from e
+      tls_ms = _ticks_diff(_ticks_ms(), t_tls_start)
 
-  if redirect is not None:
-    s.close()
-    return http_request(
-        redirect,
-        method=method,
-        body=body,
-        headers=headers,
-        bearer_token=bearer_token,
-        timeout=timeout,
-        buffer=buffer,
-        ssl_context=ssl_context,
+      t_req_start = _ticks_ms()
+      try:
+        _send_request(s, method, path, host, headers, bearer_token, body)
+        status, response_headers, redirect = _read_headers(s)
+      except Exception as e:
+        elapsed = _ticks_diff(_ticks_ms(), t_req_start)
+        err = getattr(e, 'errno', errno.ECONNRESET)
+        raise OSError(err, f'{e} (during ttfb_headers after {elapsed}ms)') from e
+      ttfb_ms = _ticks_diff(_ticks_ms(), t_req_start)
+    except Exception:
+      s.close()
+      raise
+
+    if redirect is not None:
+      s.close()
+      return http_request(
+          redirect,
+          method=method,
+          body=body,
+          headers=headers,
+          bearer_token=bearer_token,
+          timeout=timeout,
+          buffer=buffer,
+          ssl_context=ssl_context,
+      )
+
+    t_body_start = _ticks_ms()
+    try:
+      try:
+        content = _read_body(s, buffer, response_headers.get('content-length'))
+      except Exception as e:
+        elapsed = _ticks_diff(_ticks_ms(), t_body_start)
+        err = getattr(e, 'errno', errno.ECONNRESET)
+        raise OSError(err, f'{e} (during read_body after {elapsed}ms)') from e
+    finally:
+      s.close()
+    body_ms = _ticks_diff(_ticks_ms(), t_body_start)
+
+    duration_ms = _ticks_diff(_ticks_ms(), start_ms)
+    response = Response(
+        status,
+        response_headers,
+        content,
+        duration_ms=duration_ms,
+        dns_ms=dns_ms,
+        tcp_ms=tcp_ms,
+        tls_ms=tls_ms,
+        ttfb_ms=ttfb_ms,
+        body_ms=body_ms,
     )
-
-  t_body_start = _ticks_ms()
-  try:
-    content = _read_body(s, buffer, response_headers.get('content-length'))
-  finally:
-    s.close()
-  body_ms = _ticks_diff(_ticks_ms(), t_body_start)
-
-  duration_ms = _ticks_diff(_ticks_ms(), start_ms)
-  return Response(
-      status,
-      response_headers,
-      content,
-      duration_ms=duration_ms,
-      dns_ms=dns_ms,
-      tcp_ms=tcp_ms,
-      tls_ms=tls_ms,
-      ttfb_ms=ttfb_ms,
-      body_ms=body_ms,
-  )
+    logging.log(
+        'HTTP {} {} -> {} ({}, {} bytes)',
+        method,
+        url,
+        response.status_code,
+        response.timing_log(),
+        len(response.content),
+    )
+    return response
+  except Exception as e:
+    logging.error('HTTP {} {} failed: {}', method, url, e)
+    raise
