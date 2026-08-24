@@ -263,8 +263,8 @@ def run(config: config_module.Config):
       # fetched: above on the first go round, and at the bottom of this loop
       # on every one after. Waiting at the end instead spent a second request
       # on the same board a few seconds after the one that fetched it.
-      for _ in range(wait):
-        time.sleep(1)
+      if wait > 0:
+        time.sleep(wait)
 
       # If the link or radio is down, reboot immediately to reset hardware:
       if wlan is None or not wlan.isconnected():
