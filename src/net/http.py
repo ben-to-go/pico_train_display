@@ -110,11 +110,20 @@ def _connect_socket(
     raise
 
 
-def _wrap_tls(s: socket.socket, host: str, ssl_context: ssl.SSLContext | None):
-  """Wraps socket in TLS with SNI server hostname."""
+def _wrap_tls(
+    s: socket.socket,
+    host: str,
+    ssl_context: ssl.SSLContext | None,
+    timeout: int | None = None,
+):
+  """Wraps socket in TLS with SNI server hostname and reapplies socket timeout."""
   if ssl_context is not None:
-    return ssl_context.wrap_socket(s, server_hostname=host)
-  return ssl.wrap_socket(s, server_hostname=host)
+    wrapped = ssl_context.wrap_socket(s, server_hostname=host)
+  else:
+    wrapped = ssl.wrap_socket(s, server_hostname=host)
+  if timeout is not None and hasattr(wrapped, 'settimeout'):
+    wrapped.settimeout(timeout)
+  return wrapped
 
 
 def _send_request(
@@ -209,7 +218,7 @@ def http_request(
     try:
       if proto == 'https:':
         try:
-          s = _wrap_tls(s, host, ssl_context)
+          s = _wrap_tls(s, host, ssl_context, timeout)
         except Exception as e:
           elapsed = _ticks_diff(_ticks_ms(), t_tls_start)
           err = getattr(e, 'errno', errno.ECONNABORTED)
