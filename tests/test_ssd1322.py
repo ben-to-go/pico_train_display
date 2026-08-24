@@ -25,6 +25,39 @@ class DummyDisplay:
     pass
 display_mod.Display = DummyDisplay
 
+micropython_mod = sys.modules.setdefault('micropython', types.ModuleType('micropython'))
+if not hasattr(micropython_mod, 'viper'):
+    def viper(func):
+        # We need a wrapper to mock `ptr32` behaviour in pure Python
+        def wrapper(*args, **kwargs):
+            if func.__name__ == '_find_changed_rows_viper':
+                new_buf, old_buf, words_per_row, rows = args
+                first = -1
+                last = -1
+                for r in range(rows):
+                    start = r * words_per_row
+                    stop = start + words_per_row
+                    changed = False
+                    for i in range(start, stop):
+                        b_start = i * 4
+                        if new_buf[b_start:b_start+4] != old_buf[b_start:b_start+4]:
+                            changed = True
+                            break
+                    if changed:
+                        if first < 0:
+                            first = r
+                        last = r
+                if first < 0:
+                    return -1
+                return (first << 16) | last
+            return func(*args, **kwargs)
+        return wrapper
+    micropython_mod.viper = viper
+
+class _Ptr32: pass
+import builtins
+builtins.ptr32 = _Ptr32
+
 from ssd1322 import SSD1322, _find_changed_rows
 
 

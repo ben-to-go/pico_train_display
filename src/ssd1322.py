@@ -26,22 +26,42 @@ import framebuf
 import display
 
 
+import micropython
+
+
+@micropython.viper
+def _find_changed_rows_viper(
+    new_buf: ptr32, old_buf: ptr32, words_per_row: int, rows: int
+) -> int:
+  first = -1
+  last = -1
+  for r in range(rows):
+    start = r * words_per_row
+    stop = start + words_per_row
+    changed = False
+    for i in range(start, stop):
+      if new_buf[i] != old_buf[i]:
+        changed = True
+        break
+
+    if changed:
+      if first < 0:
+        first = r
+      last = r
+
+  if first < 0:
+    return -1
+  return (first << 16) | last
+
+
 def _find_changed_rows(
     new_buf, old_buf, row_bytes: int, rows: int
 ) -> tuple[int, int] | None:
   """Finds first and last row where new_buf and old_buf differ."""
-  first = -1
-  last = -1
-  for r in range(rows):
-    start = r * row_bytes
-    stop = start + row_bytes
-    if new_buf[start:stop] != old_buf[start:stop]:
-      if first < 0:
-        first = r
-      last = r
-  if first < 0:
+  res = _find_changed_rows_viper(new_buf, old_buf, row_bytes // 4, rows)
+  if res == -1:
     return None
-  return first, last
+  return res >> 16, res & 0xFFFF
 
 
 class SSD1322(display.Display):
