@@ -31,8 +31,6 @@ from services.rtt import (
     lineup_url,
     parse_calling_points,
     parse_departures,
-    to_epoch,
-    to_hhmm,
 )
 from state import StateController
 
