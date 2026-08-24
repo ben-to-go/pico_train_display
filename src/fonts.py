@@ -54,8 +54,8 @@ class Font:
       )
       self._char_width[i - font.min_ch()] = width
 
-      # Need to call gc.collect() each loop to mitigate fragmentation.
-      gc.collect()
+    # Need to call gc.collect() to mitigate fragmentation.
+    gc.collect()
 
   def render_text(
       self, text: str, framebuffer: framebuf.FrameBuffer, x: int, y: int
