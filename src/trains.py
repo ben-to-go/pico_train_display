@@ -21,7 +21,7 @@
 import ssl
 
 import logging
-from models import Departure, Response, Station
+from models import Departure, Station
 from net.errors import AuthError, RateLimitError
 import net.http as http
 import services.rtt as rtt
