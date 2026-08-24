@@ -70,12 +70,19 @@ class Font:
 
   def calculate_bounds(self, text: str) -> tuple[int, int]:
     """Calculates the bounds for a piece of text."""
-    width, height = 0, 0
+    width = 0
+    has_valid_char = False
+    min_ch = self._min_ch
+    max_ch = self._max_ch
+    char_width = self._char_width
+
     for char in text:
       code = ord(char)
-      if self._min_ch <= code <= self._max_ch:
-        width += self._char_width[code - self._min_ch]
-        height = max(height, self._font.height())
+      if min_ch <= code <= max_ch:
+        width += char_width[code - min_ch]
+        has_valid_char = True
+
+    height = self._font.height() if has_valid_char else 0
     return width, height
 
   def max_bounds(self) -> tuple[int, int]:
