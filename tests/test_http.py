@@ -229,6 +229,34 @@ class HttpTimingComprehensiveTest(unittest.TestCase):
       http._connect_socket('example.com', 80, timeout=1)
     self.assertIn('during tcp_connect', str(ctx.exception))
 
+  def test_wrap_tls_reapplies_socket_timeout(self):
+    mock_sock = MockSocket()
+    wrapped_sock = MockSocket()
+    orig_wrap_socket = getattr(ssl, 'wrap_socket', None)
+
+    ssl.wrap_socket = lambda s, **k: wrapped_sock
+    if orig_wrap_socket is not None:
+      self.addCleanup(setattr, ssl, 'wrap_socket', orig_wrap_socket)
+    elif hasattr(ssl, 'wrap_socket'):
+      self.addCleanup(delattr, ssl, 'wrap_socket')
+
+    res = http._wrap_tls(mock_sock, 'example.com', None, timeout=15)
+    self.assertEqual(wrapped_sock, res)
+    self.assertEqual(15, wrapped_sock.timeout)
+
+  def test_wrap_tls_with_ssl_context_reapplies_socket_timeout(self):
+    mock_sock = MockSocket()
+    wrapped_sock = MockSocket()
+
+    class MockSSLContext:
+      def wrap_socket(self, s, **k):
+        return wrapped_sock
+
+    res = http._wrap_tls(mock_sock, 'example.com', MockSSLContext(), timeout=20)
+    self.assertEqual(wrapped_sock, res)
+    self.assertEqual(20, wrapped_sock.timeout)
+
 
 if __name__ == '__main__':
   unittest.main()
+
