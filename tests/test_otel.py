@@ -64,10 +64,11 @@ class _Collector:
     self.batches = []
 
   def __call__(self, url, **kwargs):
+    from models import Response
     if self.error is not None:
       raise self.error
     self.batches.append((url, kwargs))
-    return trains.Response(self.status, {}, b'')
+    return Response(self.status, {}, b'')
 
   def sent(self, batch=0):
     return json.loads(self.batches[batch][1]['body'])

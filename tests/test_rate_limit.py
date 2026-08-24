@@ -39,10 +39,11 @@ import firmware_path  # noqa: E402,F401  see its docstring
 import fallback
 import logging
 import trains
+from models import Response
 
 
 def _response(status, headers):
-  return trains.Response(status, headers, b'{}')
+  return Response(status, headers, b'{}')
 
 
 class RateLimitTest(unittest.TestCase):
@@ -132,12 +133,12 @@ class RequestBudgetTest(unittest.TestCase):
     def request(url, **kwargs):
       self.requests.append(url)
       if status != 200:
-        return trains.Response(status, headers or {}, b'{}')
+        return Response(status, headers or {}, b'{}')
       if 'get_access_token' in url:
-        return trains.Response(200, {}, '{"token": "access-token"}')
+        return Response(200, {}, '{"token": "access-token"}')
       if '/service' in url:
-        return trains.Response(200, {}, fallback.SERVICE)
-      return trains.Response(200, {}, fallback.RESPONSE)
+        return Response(200, {}, fallback.SERVICE)
+      return Response(200, {}, fallback.RESPONSE)
 
     trains.http_request = request
 
